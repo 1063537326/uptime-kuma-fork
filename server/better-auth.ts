@@ -19,6 +19,16 @@ export type BetterAuthUser = ReturnType<typeof createAuthInstance>["$Infer"]["Se
 
 let authInstance: ReturnType<typeof createAuthInstance>;
 
+const LEGACY_USER_RESOURCE_TABLES = [
+    "docker_host",
+    "proxy",
+    "monitor",
+    "maintenance",
+    "notification",
+    "api_key",
+    "remote_browser",
+];
+
 /**
  * Get the singleton instance of better-auth
  * Mainly used for http and socket.io authentication
@@ -311,6 +321,20 @@ export async function migrateUser(username: string, password: string) {
                         username,
                     },
                 },
+            });
+
+            // The Better Auth foreign-key migration preserves legacy numeric
+            // user IDs as strings. Reassign existing resources before scoped
+            // queries start using the new Better Auth user ID.
+            await R.knex.transaction(async (trx) => {
+                for (const table of LEGACY_USER_RESOURCE_TABLES) {
+                    await trx(table)
+                        // Knex recreates these columns while changing the ID
+                        // type, so SQLite upgrades can leave legacy owners null.
+                        .whereNull("user_id")
+                        .orWhere("user_id", String(legacyUser.id))
+                        .update({ user_id: newUser.user.id });
+                }
             });
 
             // Migrate 2FA settings if they exist
