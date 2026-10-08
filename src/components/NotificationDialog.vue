@@ -242,6 +242,7 @@ export default {
                 stackfield: "Stackfield",
                 teams: "Microsoft Teams",
                 telegram: "Telegram",
+                Talkin: "Talkin",
                 threema: "Threema",
                 ZohoCliq: "ZohoCliq",
                 CallMeBot: "CallMeBot (WhatsApp, Telegram Call, Facebook Messenger)",

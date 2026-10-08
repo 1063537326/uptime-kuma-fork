@@ -107,6 +107,7 @@ import Max from "./Max.vue";
 import VK from "./VK.vue";
 import VKTeams from "./VKTeams.vue";
 import Milky from "./Milky.vue";
+import Talkin from "./Talkin.vue";
 
 /**
  * Manage all notification form.
@@ -222,6 +223,7 @@ const NotificationFormList = {
     VK: VK,
     VKTeams: VKTeams,
     Milky: Milky,
+    Talkin: Talkin,
 };
 
 export default NotificationFormList;

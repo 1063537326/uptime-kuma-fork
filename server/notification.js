@@ -110,6 +110,7 @@ const Max = require("./notification-providers/max");
 const VK = require("./notification-providers/vk");
 const VKTeams = require("./notification-providers/vkteams");
 const Milky = require("./notification-providers/milky");
+const Talkin = require("./notification-providers/talkin");
 
 class Notification {
     providerList = {};
@@ -235,6 +236,7 @@ class Notification {
             new VK(),
             new VKTeams(),
             new Milky(),
+            new Talkin(),
         ];
         for (let item of list) {
             if (!item.name) {
