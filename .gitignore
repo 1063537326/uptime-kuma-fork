@@ -25,3 +25,6 @@ extra/exe-builder/obj
 .vs
 .vscode
 .devcontainer
+
+# Local integration documents
+/DOCS/
