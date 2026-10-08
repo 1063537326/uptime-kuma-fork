@@ -21,6 +21,8 @@
             </button>
         </div>
 
+        <InspectionSchedule />
+
         <div class="my-4 pt-4">
             <h5 class="my-4 settings-subheading">{{ $t("monitorToastMessagesLabel") }}</h5>
             <p>{{ $t("monitorToastMessagesDescription") }}</p>
@@ -137,11 +139,13 @@
 <script>
 import NotificationDialog from "../../components/NotificationDialog.vue";
 import ActionInput from "../ActionInput.vue";
+import InspectionSchedule from "./InspectionSchedule.vue";
 
 export default {
     components: {
         NotificationDialog,
         ActionInput,
+        InspectionSchedule,
     },
 
     data() {
