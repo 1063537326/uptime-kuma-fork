@@ -7,6 +7,7 @@ const express = require("express");
 const { R } = require("redbean-node");
 const { buildCurrentStatusReport, InspectionReportService } = require("../../server/inspection-report-service");
 const { Notification } = require("../../server/notification");
+const { Settings } = require("../../server/settings");
 const { DOWN, UP, PENDING, MAINTENANCE } = require("../../src/util");
 
 describe("Inspection day summary through the application service", () => {
@@ -19,6 +20,12 @@ describe("Inspection day summary through the application service", () => {
         db = knex({ client: "better-sqlite3", connection: { filename: ":memory:" }, useNullAsDefault: true });
         R.setup(db);
         R.freeze(true);
+        await db.schema.createTable("setting", (table) => {
+            table.increments("id");
+            table.string("key");
+            table.text("value");
+            table.string("type");
+        });
         await db.schema.createTable("monitor", (table) => {
             table.increments("id");
             table.integer("user_id");
@@ -75,6 +82,7 @@ describe("Inspection day summary through the application service", () => {
     });
 
     after(async () => {
+        Settings.stopCacheCleaner();
         await new Promise((resolve) => server.close(resolve));
         await db.destroy();
     });

@@ -6,6 +6,7 @@ const express = require("express");
 const { R } = require("redbean-node");
 const knex = require("knex");
 const { Notification } = require("../../server/notification");
+const { Settings } = require("../../server/settings");
 const {
     InspectionReportService,
     buildCurrentStatusReportFromData,
@@ -34,6 +35,7 @@ describe("Inspection report service", () => {
         });
         R.setup(db);
         R.freeze(true);
+        await R.exec("CREATE TABLE setting (id INTEGER PRIMARY KEY AUTOINCREMENT, `key` TEXT, value TEXT, type TEXT)");
         await R.exec(
             "CREATE TABLE monitor (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT, type TEXT, url TEXT, active INTEGER, `interval` INTEGER, parent INTEGER)"
         );
@@ -85,6 +87,7 @@ describe("Inspection report service", () => {
     });
 
     after(async () => {
+        Settings.stopCacheCleaner();
         await new Promise((resolve) => server.close(resolve));
         await db.destroy();
     });

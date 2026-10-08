@@ -301,6 +301,7 @@ app.use(function (req, res, next) {
                 throw new Error("Snapshot doesn't exist.");
             }
 
+            await stopBackgroundJobs();
             await Database.close();
             try {
                 fs.cpSync(`${Database.sqlitePath}.e2e-snapshot`, Database.sqlitePath);
@@ -308,6 +309,8 @@ app.use(function (req, res, next) {
                 throw new Error("Unable to copy snapshot file.");
             }
             await Database.connect();
+            Settings.cacheList = {};
+            await initBackgroundJobs();
 
             response.send("Snapshot restored.");
         });
@@ -1584,6 +1587,7 @@ async function shutdownFunction(signal) {
     log.info("server", "Shutdown requested");
     log.info("server", "Called signal: " + signal);
 
+    await stopBackgroundJobs();
     await server.stop();
 
     log.info("server", "Stopping all monitors");
@@ -1598,7 +1602,6 @@ async function shutdownFunction(signal) {
         EmbeddedMariaDB.getInstance().stop();
     }
 
-    stopBackgroundJobs();
     await cloudflaredStop();
     Settings.stopCacheCleaner();
 }

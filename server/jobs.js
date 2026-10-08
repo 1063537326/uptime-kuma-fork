@@ -2,6 +2,7 @@ const { UptimeKumaServer } = require("./uptime-kuma-server");
 const { clearOldData } = require("./jobs/clear-old-data");
 const { incrementalVacuum } = require("./jobs/incremental-vacuum");
 const Cron = require("croner");
+const { inspectionReportScheduler } = require("./inspection-report-scheduler");
 
 const jobs = [
     {
@@ -36,19 +37,21 @@ const initBackgroundJobs = async function () {
         );
         job.croner = cornerJob;
     }
+    await inspectionReportScheduler.start();
 };
 
 /**
  * Stop all background jobs if running
- * @returns {void}
+ * @returns {Promise<void>}
  */
-const stopBackgroundJobs = function () {
+const stopBackgroundJobs = async function () {
     for (const job of jobs) {
         if (job.croner) {
             job.croner.stop();
             job.croner = null;
         }
     }
+    await inspectionReportScheduler.stop();
 };
 
 module.exports = {

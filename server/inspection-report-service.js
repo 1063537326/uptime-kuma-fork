@@ -8,6 +8,7 @@ const { log } = require("../src/util");
 const Monitor = require("./model/monitor");
 const { Notification } = require("./notification");
 const { TalkinResponseError } = require("./notification-providers/talkin");
+const { getInspectionReportSettings } = require("./inspection-report-settings");
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -41,6 +42,30 @@ class InspectionReportService {
      * @returns {Promise<object>} Safe delivery summary
      */
     static async sendManual(userID, generatedAt = new Date()) {
+        const settings = await getInspectionReportSettings(userID);
+        return this.send(userID, "manual", generatedAt, { timezone: settings.timezone });
+    }
+
+    /**
+     * Deliver a scheduled report through the same use case as manual reports.
+     * @param {string} userID Resource owner
+     * @param {Date} generatedAt Server clock
+     * @param {object} options Validated schedule settings and period
+     * @returns {Promise<object>} Safe delivery summary
+     */
+    static async sendScheduled(userID, generatedAt, options) {
+        return this.send(userID, "scheduled", generatedAt, options);
+    }
+
+    /**
+     * Shared delivery boundary with a per-user, cross-trigger mutex.
+     * @param {string} userID Resource owner
+     * @param {string} trigger Manual or scheduled
+     * @param {Date} generatedAt Server clock
+     * @param {object} options Report period and timezone
+     * @returns {Promise<object>} Safe delivery summary
+     */
+    static async send(userID, trigger, generatedAt, options = {}) {
         if (activeUsers.has(userID)) {
             throw new Error("An inspection report is already being sent.");
         }
@@ -58,7 +83,7 @@ class InspectionReportService {
                 };
             }
 
-            const report = await buildCurrentStatusReport(userID, "manual", generatedAt);
+            const report = await buildCurrentStatusReport(userID, trigger, generatedAt, options);
             const settled = await Promise.allSettled(
                 recipients.map(async (recipient) => {
                     const startedAt = Date.now();
