@@ -97,7 +97,8 @@ class InspectionReportService {
                     } catch (error) {
                         log.warn(
                             "inspection-report",
-                            `Report ${report.reportId} failed for notification ${recipient.id} after ${Date.now() - startedAt} ms`
+                            `Report ${report.reportId} failed for notification ${recipient.id} after ${Date.now() - startedAt} ms ` +
+                            `(trigger=${report.trigger}, channel=webhook, window=${report.window.start}/${report.window.end})`
                         );
                         const deliveryError = new Error("Inspection report delivery failed.", { cause: error });
                         deliveryError.recipient = recipient;
@@ -163,7 +164,7 @@ async function buildCurrentStatusReport(userID, trigger, generatedAt = new Date(
         throw new Error("Evening report cannot precede the morning boundary.");
     }
     const allMonitors = await R.getAll(
-        "SELECT id, name, active, parent, type, `interval` FROM monitor WHERE user_id = ?",
+        "SELECT id, name, active, parent, type, `interval`, retry_interval AS retryInterval FROM monitor WHERE user_id = ?",
         [userID]
     );
     const nonGroupMonitors = allMonitors.filter((monitor) => monitor.type !== "group");
@@ -394,7 +395,9 @@ function isHeartbeatStale(monitor, heartbeat, generatedAt) {
         return true;
     }
 
-    const expectedIntervalMs = Math.max(Number(monitor.interval) || 0, 0) * 3 * 1000;
+    const interval = Number(heartbeat.status) === PENDING && Number(monitor.retryInterval) > 0
+        ? monitor.retryInterval : monitor.interval;
+    const expectedIntervalMs = Math.max(Number(interval) || 0, 0) * 3 * 1000;
     const threshold = Math.max(STALE_MINIMUM_MS, expectedIntervalMs);
     return dayjs(generatedAt).diff(heartbeatTime, "millisecond") > threshold;
 }

@@ -33,6 +33,7 @@ describe("Inspection day summary through the application service", () => {
             table.string("type");
             table.integer("active");
             table.integer("interval");
+            table.integer("retry_interval");
             table.integer("parent");
         });
         await db.schema.createTable("heartbeat", (table) => {
@@ -85,6 +86,23 @@ describe("Inspection day summary through the application service", () => {
         Settings.stopCacheCleaner();
         await new Promise((resolve) => server.close(resolve));
         await db.destroy();
+    });
+
+    test("pending freshness follows the retry interval while online freshness follows the normal interval", async () => {
+        await monitor(1, { interval: 60, retry_interval: 600 });
+        await monitor(2, { interval: 600, retry_interval: 60 });
+        await monitor(3, { interval: 600, retry_interval: 60 });
+        await monitor(4, { interval: 600, retry_interval: 0 });
+        for (const id of [1, 2, 4]) {
+            await beat(id, "2026-10-08 01:00:00", PENDING, false);
+        }
+        await beat(3, "2026-10-08 01:00:00", UP, false);
+        const report = await buildCurrentStatusReport(1, "manual", new Date("2026-10-08T01:06:00Z"));
+        const statuses = new Map(report.monitors.map((item) => [item.id, item.status]));
+        assert.equal(statuses.get(1), "pending");
+        assert.equal(statuses.get(2), "stale");
+        assert.equal(statuses.get(3), "online");
+        assert.equal(statuses.get(4), "pending");
     });
 
     test("morning report counts only confirmed failures in the Shanghai half-open day window", async () => {

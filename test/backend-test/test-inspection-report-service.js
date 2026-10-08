@@ -37,7 +37,7 @@ describe("Inspection report service", () => {
         R.freeze(true);
         await R.exec("CREATE TABLE setting (id INTEGER PRIMARY KEY AUTOINCREMENT, `key` TEXT, value TEXT, type TEXT)");
         await R.exec(
-            "CREATE TABLE monitor (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT, type TEXT, url TEXT, active INTEGER, `interval` INTEGER, parent INTEGER)"
+            "CREATE TABLE monitor (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT, type TEXT, url TEXT, active INTEGER, `interval` INTEGER, retry_interval INTEGER, parent INTEGER)"
         );
         await R.exec(
             "CREATE TABLE heartbeat (id INTEGER PRIMARY KEY AUTOINCREMENT, monitor_id INTEGER, status INTEGER, time TEXT, msg TEXT, important INTEGER DEFAULT 0)"

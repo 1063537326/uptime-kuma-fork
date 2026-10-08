@@ -37,6 +37,7 @@ describe("Configurable inspection reports", () => {
             table.string("type");
             table.integer("active");
             table.integer("interval");
+            table.integer("retry_interval");
             table.integer("parent");
         });
         await db.schema.createTable("heartbeat", (table) => {
