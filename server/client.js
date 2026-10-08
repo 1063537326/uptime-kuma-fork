@@ -19,7 +19,7 @@ async function sendNotificationList(socket) {
     const timeLogger = new TimeLogger();
 
     let result = [];
-    let list = await R.find("notification");
+    let list = await R.find("notification", " user_id = ? ", [socket.userID]);
 
     for (let bean of list) {
         let notificationObject = bean.export();

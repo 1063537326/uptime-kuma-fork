@@ -1208,11 +1208,27 @@ app.use(function (req, res, next) {
             }
         });
 
+        socket.on("previewNotificationApply", async (notificationID, scope, removeFromGroups, callback) => {
+            try {
+                checkLogin(socket);
+                const preview = await Notification.previewApply(notificationID, socket.userID, scope, removeFromGroups);
+                callback({
+                    ok: true,
+                    preview,
+                });
+            } catch (e) {
+                callback({
+                    ok: false,
+                    msg: e.message,
+                });
+            }
+        });
+
         socket.on("deleteNotification", async (notificationID, callback) => {
             try {
                 checkLogin(socket);
 
-                await Notification.delete(notificationID);
+                await Notification.delete(notificationID, socket.userID);
                 await sendNotificationList(socket);
 
                 callback({

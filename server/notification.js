@@ -278,7 +278,7 @@ class Notification {
         let bean;
 
         if (notificationID) {
-            bean = await R.findOne("notification", " id = ? ", [notificationID]);
+            bean = await R.findOne("notification", " id = ? AND user_id = ? ", [notificationID, userID]);
 
             if (!bean) {
                 throw new Error("notification not found");
@@ -287,18 +287,22 @@ class Notification {
             bean = R.dispense("notification");
         }
 
-        // applyExisting is one time only, don't save it to database.
-        const applyExisting = notification.applyExisting || false;
-        notification.applyExisting = false;
+        // Bulk apply options are one-time actions and must not be persisted.
+        const applyExistingScope = normalizeApplyExistingScope(notification);
+        const removeFromGroups = applyExistingScope === "non-group" && notification.removeFromGroups === true;
+        const storedNotification = { ...notification };
+        delete storedNotification.applyExisting;
+        delete storedNotification.applyExistingScope;
+        delete storedNotification.removeFromGroups;
 
         bean.name = notification.name;
         bean.user_id = userID;
-        bean.config = JSON.stringify(notification);
+        bean.config = JSON.stringify(storedNotification);
         bean.is_default = notification.isDefault || false;
         await R.store(bean);
 
-        if (applyExisting) {
-            await applyNotificationEveryMonitor(bean.id);
+        if (applyExistingScope !== "none") {
+            await applyNotificationToMonitors(bean.id, userID, applyExistingScope, removeFromGroups);
         }
 
         return bean;
@@ -307,16 +311,36 @@ class Notification {
     /**
      * Delete a notification
      * @param {number} notificationID ID of notification to delete
+     * @param {number} userID ID of the owning user
      * @returns {Promise<void>}
      */
-    static async delete(notificationID) {
-        let bean = await R.findOne("notification", " id = ? ", [notificationID]);
+    static async delete(notificationID, userID) {
+        let bean = await R.findOne("notification", " id = ? AND user_id = ? ", [notificationID, userID]);
 
         if (!bean) {
             throw new Error("notification not found");
         }
 
         await R.trash(bean);
+    }
+
+    /**
+     * Preview a one-time bulk apply operation.
+     * @param {?number} notificationID Existing notification ID, or null for a new notification
+     * @param {number} userID ID of the current user
+     * @param {string} scope Bulk apply scope
+     * @param {boolean} removeFromGroups Whether existing group bindings should be removed
+     * @returns {Promise<{ additions: number, removals: number }>} Binding changes
+     */
+    static async previewApply(notificationID, userID, scope, removeFromGroups) {
+        if (notificationID) {
+            const notification = await R.findOne("notification", " id = ? AND user_id = ? ", [notificationID, userID]);
+            if (!notification) {
+                throw new Error("notification not found");
+            }
+        }
+
+        return getNotificationApplyPreview(notificationID, userID, scope, removeFromGroups);
     }
 
     /**
@@ -329,28 +353,121 @@ class Notification {
 }
 
 /**
- * Apply the notification to every monitor
+ * Normalize the one-time bulk apply scope while retaining compatibility with
+ * clients that only send the legacy applyExisting boolean.
+ * @param {object|string} notificationOrScope Notification payload or scope
+ * @returns {"none"|"non-group"|"all"} Normalized scope
+ */
+function normalizeApplyExistingScope(notificationOrScope) {
+    if (typeof notificationOrScope === "string") {
+        return ["none", "non-group", "all"].includes(notificationOrScope) ? notificationOrScope : "none";
+    }
+
+    if (["none", "non-group", "all"].includes(notificationOrScope.applyExistingScope)) {
+        return notificationOrScope.applyExistingScope;
+    }
+
+    return notificationOrScope.applyExisting === true ? "all" : "none";
+}
+
+/**
+ * Preview a one-time notification bulk apply operation.
+ * @param {?number} notificationID Notification ID; null when creating a notification
+ * @param {number} userID ID of the current user
+ * @param {string} scope Bulk apply scope
+ * @param {boolean} removeFromGroups Whether group bindings should be removed
+ * @returns {Promise<{ additions: number, removals: number }>} Binding changes
+ */
+async function getNotificationApplyPreview(notificationID, userID, scope, removeFromGroups) {
+    const normalizedScope = normalizeApplyExistingScope(scope);
+    if (normalizedScope === "none") {
+        return { additions: 0, removals: 0 };
+    }
+
+    const typeFilter = normalizedScope === "non-group" ? "AND monitor.type != 'group'" : "";
+    const additions = await R.getCell(
+        `SELECT COUNT(*)
+         FROM monitor
+         WHERE monitor.user_id = ?
+           ${typeFilter}
+           AND NOT EXISTS (
+               SELECT 1 FROM monitor_notification
+               WHERE monitor_notification.monitor_id = monitor.id
+                 AND monitor_notification.notification_id = ?
+           )`,
+        [userID, notificationID || 0]
+    );
+
+    let removals = 0;
+    if (normalizedScope === "non-group" && removeFromGroups === true && notificationID) {
+        removals = await R.getCell(
+            `SELECT COUNT(*)
+             FROM monitor_notification
+             INNER JOIN monitor ON monitor.id = monitor_notification.monitor_id
+             WHERE monitor_notification.notification_id = ?
+               AND monitor.user_id = ?
+               AND monitor.type = 'group'`,
+            [notificationID, userID]
+        );
+    }
+
+    return {
+        additions: Number(additions),
+        removals: Number(removals),
+    };
+}
+
+/**
+ * Apply a notification to monitors owned by one user.
  * @param {number} notificationID ID of notification to apply
+ * @param {number} userID ID of the current user
+ * @param {"non-group"|"all"} scope Bulk apply scope
+ * @param {boolean} removeFromGroups Whether group bindings should be removed
  * @returns {Promise<void>}
  */
-async function applyNotificationEveryMonitor(notificationID) {
-    let monitors = await R.getAll("SELECT id FROM monitor");
+async function applyNotificationToMonitors(notificationID, userID, scope, removeFromGroups) {
+    const normalizedScope = normalizeApplyExistingScope(scope);
+    if (normalizedScope === "none") {
+        return;
+    }
 
-    for (let i = 0; i < monitors.length; i++) {
-        let checkNotification = await R.findOne("monitor_notification", " monitor_id = ? AND notification_id = ? ", [
-            monitors[i].id,
-            notificationID,
-        ]);
-
-        if (!checkNotification) {
-            let relation = R.dispense("monitor_notification");
-            relation.monitor_id = monitors[i].id;
-            relation.notification_id = notificationID;
-            await R.store(relation);
+    const trx = await R.begin();
+    try {
+        if (normalizedScope === "non-group" && removeFromGroups === true) {
+            await trx.exec(
+                `DELETE FROM monitor_notification
+                 WHERE notification_id = ?
+                   AND monitor_id IN (
+                       SELECT id FROM monitor WHERE user_id = ? AND type = 'group'
+                   )`,
+                [notificationID, userID]
+            );
         }
+
+        const typeFilter = normalizedScope === "non-group" ? "AND monitor.type != 'group'" : "";
+        await trx.exec(
+            `INSERT INTO monitor_notification (monitor_id, notification_id)
+             SELECT monitor.id, ?
+             FROM monitor
+             WHERE monitor.user_id = ?
+               ${typeFilter}
+               AND NOT EXISTS (
+                   SELECT 1 FROM monitor_notification
+                   WHERE monitor_notification.monitor_id = monitor.id
+                     AND monitor_notification.notification_id = ?
+               )`,
+            [notificationID, userID, notificationID]
+        );
+        await trx.commit();
+    } catch (error) {
+        await trx.rollback();
+        throw error;
     }
 }
 
 module.exports = {
     Notification,
+    applyNotificationToMonitors,
+    getNotificationApplyPreview,
+    normalizeApplyExistingScope,
 };

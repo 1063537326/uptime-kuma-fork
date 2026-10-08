@@ -115,8 +115,8 @@
                             <hr class="dropdown-divider mb-4" />
 
                             <div class="form-check form-switch">
-                                <input v-model="notification.isDefault" class="form-check-input" type="checkbox" />
-                                <label class="form-check-label">{{ $t("Default enabled") }}</label>
+                                <input id="notification-default" v-model="notification.isDefault" class="form-check-input" type="checkbox" />
+                                <label for="notification-default" class="form-check-label">{{ $t("Default enabled for non-group monitors") }}</label>
                             </div>
                             <div class="form-text">
                                 {{ $t("enableDefaultNotificationDescription") }}
@@ -124,9 +124,47 @@
 
                             <br />
 
-                            <div class="form-check form-switch">
-                                <input v-model="notification.applyExisting" class="form-check-input" type="checkbox" />
-                                <label class="form-check-label">{{ $t("Apply on all existing monitors") }}</label>
+                            <label for="notification-apply-scope" class="form-label">
+                                {{ $t("Apply to existing monitors") }}
+                            </label>
+                            <select
+                                id="notification-apply-scope"
+                                v-model="notification.applyExistingScope"
+                                class="form-select"
+                            >
+                                <option value="none">{{ $t("Do not apply in bulk") }}</option>
+                                <option value="non-group">{{ $t("Apply to all existing non-group monitors") }}</option>
+                                <option value="all">{{ $t("Apply on all existing monitors") }}</option>
+                            </select>
+                            <div class="form-text">
+                                {{ $t("notificationApplyScopeDescription") }}
+                            </div>
+
+                            <div v-if="notification.applyExistingScope === 'non-group'" class="form-check mt-3">
+                                <input
+                                    id="notification-remove-groups"
+                                    v-model="notification.removeFromGroups"
+                                    class="form-check-input"
+                                    type="checkbox"
+                                />
+                                <label class="form-check-label" for="notification-remove-groups">
+                                    {{ $t("Also remove this notification from all group monitors") }}
+                                </label>
+                            </div>
+
+                            <div
+                                v-if="notification.applyExistingScope !== 'none'"
+                                class="alert alert-secondary notification-apply-preview mt-3 mb-0"
+                            >
+                                <span v-if="applyPreviewLoading">{{ $t("Loading...") }}</span>
+                                <span v-else>
+                                    {{
+                                        $t("notificationApplyPreview", {
+                                            additions: applyPreview.additions,
+                                            removals: applyPreview.removals,
+                                        })
+                                    }}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -181,6 +219,11 @@ export default {
         return {
             model: null,
             processing: false,
+            applyPreviewLoading: false,
+            applyPreview: {
+                additions: 0,
+                removals: 0,
+            },
             id: null,
             notificationTypes: Object.keys(NotificationFormList).sort((a, b) => {
                 return a.toLowerCase().localeCompare(b.toLowerCase());
@@ -408,6 +451,12 @@ export default {
                 this.notification.name = this.getUniqueDefaultName(to);
             }
         },
+        "notification.applyExistingScope"() {
+            this.refreshApplyPreview();
+        },
+        "notification.removeFromGroups"() {
+            this.refreshApplyPreview();
+        },
     },
     mounted() {
         this.modal = new Modal(this.$refs.modal);
@@ -440,6 +489,8 @@ export default {
 
                         // applyExisting is one time only, but it got saved to database previously. Workaround fix, set it to false here to deal with the problem.
                         this.notification.applyExisting = false;
+                        this.notification.applyExistingScope = "none";
+                        this.notification.removeFromGroups = false;
 
                         break;
                     }
@@ -450,10 +501,44 @@ export default {
                     name: "",
                     type: "telegram",
                     isDefault: false,
+                    applyExistingScope: "none",
+                    removeFromGroups: false,
                 };
             }
 
             this.modal.show();
+            this.refreshApplyPreview();
+        },
+
+        /**
+         * Refresh the server-authoritative preview for a one-time bulk apply.
+         * @returns {void}
+         */
+        refreshApplyPreview() {
+            const scope = this.notification.applyExistingScope || "none";
+            if (scope === "none") {
+                this.applyPreview = { additions: 0, removals: 0 };
+                this.applyPreviewLoading = false;
+                return;
+            }
+
+            this.applyPreviewLoading = true;
+            this.$root
+                .getSocket()
+                .emit(
+                    "previewNotificationApply",
+                    this.id,
+                    scope,
+                    this.notification.removeFromGroups === true,
+                    (res) => {
+                        this.applyPreviewLoading = false;
+                        if (res.ok) {
+                            this.applyPreview = res.preview;
+                        } else {
+                            this.applyPreview = { additions: 0, removals: 0 };
+                        }
+                    }
+                );
         },
 
         /**
@@ -543,6 +628,12 @@ export default {
 @import "../assets/vars.scss";
 
 .dark {
+    .notification-apply-preview {
+        color: $dark-font-color;
+        background-color: $dark-bg2;
+        border-color: $dark-border-color;
+    }
+
     .modal-dialog .form-text,
     .modal-dialog p {
         color: $dark-font-color;

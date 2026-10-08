@@ -2299,6 +2299,7 @@
                                     v-model="monitor.notificationIDList[notification.id]"
                                     class="form-check-input"
                                     type="checkbox"
+                                    @change="manualNotificationIDs[notification.id] = true"
                                 />
 
                                 <label class="form-check-label" :for="'notification' + notification.id">
@@ -2308,7 +2309,7 @@
                                     </a>
                                 </label>
 
-                                <span v-if="notification.isDefault == true" class="badge bg-primary ms-2">
+                                <span v-if="notification.isDefault == true && monitor.type !== 'group'" class="badge bg-primary ms-2">
                                     {{ $t("Default") }}
                                 </span>
                             </div>
@@ -3440,6 +3441,7 @@ export default {
             minInterval: MIN_INTERVAL_SECOND,
             pingPerRequestTimeoutMax: PING_PER_REQUEST_TIMEOUT_MAX,
             processing: false,
+            manualNotificationIDs: {},
             monitor: {
                 notificationIDList: {},
                 // Do not add default value here, please check init() method
@@ -3819,6 +3821,9 @@ message HealthCheckResponse {
 
         "monitor.type"(newType, oldType) {
             this.checkDomain();
+            if (this.isAdd) {
+                this.applyDefaultNotifications();
+            }
 
             if (newType === "pm2") {
                 this.loadPM2ProcessList();
@@ -4109,9 +4114,11 @@ message HealthCheckResponse {
          * @returns {void}
          */
         init() {
+            this.manualNotificationIDs = {};
             if (this.isAdd) {
                 this.monitor = {
                     ...monitorDefaults,
+                    notificationIDList: {},
                     ping_count: 3,
                     ping_numeric: true,
                     packetSize: 56,
@@ -4126,11 +4133,7 @@ message HealthCheckResponse {
                     }
                 }
 
-                for (let i = 0; i < this.$root.notificationList.length; i++) {
-                    if (this.$root.notificationList[i].isDefault === true) {
-                        this.monitor.notificationIDList[this.$root.notificationList[i].id] = true;
-                    }
-                }
+                this.applyDefaultNotifications();
             } else if (this.isEdit || this.isClone) {
                 this.$root.getSocket().emit("getMonitor", this.$route.params.id, (res) => {
                     if (res.ok) {
@@ -4511,7 +4514,21 @@ message HealthCheckResponse {
          * @returns {void}
          */
         addedNotification(id) {
+            this.manualNotificationIDs[id] = true;
             this.monitor.notificationIDList[id] = true;
+        },
+
+        /**
+         * Inherit defaults only for new non-group monitors. Explicit choices
+         * and bindings loaded while editing or cloning remain untouched.
+         * @returns {void}
+         */
+        applyDefaultNotifications() {
+            for (const notification of this.$root.notificationList) {
+                if (notification.isDefault === true && !this.manualNotificationIDs[notification.id]) {
+                    this.monitor.notificationIDList[notification.id] = this.monitor.type !== "group";
+                }
+            }
         },
 
         /**
