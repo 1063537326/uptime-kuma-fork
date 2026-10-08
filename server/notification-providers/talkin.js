@@ -150,8 +150,8 @@ function createMessageID() {
 function buildTalkinMessage(notification, msg, monitorJSON, heartbeatJSON) {
     if (!heartbeatJSON) {
         return [
-            "🔵 Uptime Kuma · 测试通知",
-            "Talkin 通知配置连接正常",
+            "🔵 Uptime Kuma · 通知",
+            String(msg || ""),
             "",
             "────────────",
             `配置名称：${compactText(notification.name, NAME_LIMIT, "未命名通知")}`,

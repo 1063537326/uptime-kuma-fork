@@ -73,9 +73,17 @@ describe("Talkin notification provider", () => {
         );
     });
 
+    test("certificate notifications without heartbeats retain the expiry warning", async () => {
+        const message = "TLS certificate test.invalid will expire in 7 days";
+        await new Talkin().send(buildNotification(`${baseURL}/success`), message);
+        const delivered = new URLSearchParams(requests.at(-1).body).get("message");
+        assert.ok(delivered.includes(message));
+        assert.doesNotMatch(delivered, /测试通知|连接正常/);
+    });
+
     test("message builder produces distinct plain-text down, recovery, and test layouts", () => {
         const notification = buildNotification(`${baseURL}/success`);
-        assert.match(Talkin.buildTalkinMessage(notification, "test", null, null), /测试通知/);
+        assert.match(Talkin.buildTalkinMessage(notification, "test", null, null), /test/);
         assert.match(
             Talkin.buildTalkinMessage(notification, "down", { name: "API" }, { status: DOWN, msg: "Timeout" }),
             /服务已离线/
