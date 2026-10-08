@@ -70,15 +70,20 @@ class NotificationProvider {
      * @param {string} msg the message that will be included in the context
      * @param {?object} monitorJSON Monitor details (For Up/Down/Cert-Expiry only)
      * @param {?object} heartbeatJSON Heartbeat details (For Up/Down only)
+     * @param {?object} report Inspection report context, independent of alerts
      * @returns {Promise<string>} rendered template
      */
-    async renderTemplate(template, msg, monitorJSON, heartbeatJSON) {
+    async renderTemplate(template, msg, monitorJSON, heartbeatJSON, report = null) {
         const engine = new Liquid({
             root: "./no-such-directory-uptime-kuma",
             relativeReference: false,
             dynamicPartials: false,
         });
         const parsedTpl = engine.parse(template);
+
+        if (report !== null) {
+            return engine.render(parsedTpl, { msg, report });
+        }
 
         // Let's start with dummy values to simplify code
         let monitorName = "Monitor Name not available";

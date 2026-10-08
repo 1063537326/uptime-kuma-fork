@@ -37,7 +37,23 @@
             </div>
 
             <div class="shadow-box table-shadow-box table-wrapper">
-                <div class="mb-3 text-end">
+                <div class="mb-3 d-flex flex-wrap align-items-center justify-content-end gap-2">
+                    <span v-if="inspectionRecipientCount === 0" class="small text-secondary me-auto">
+                        {{ $t("inspectionReportNoRecipientsHint") }}
+                    </span>
+                    <button
+                        data-testid="send-inspection-report"
+                        class="btn btn-sm btn-primary"
+                        :disabled="sendingInspectionReport || inspectionRecipientCount === 0"
+                        @click="sendInspectionReport"
+                    >
+                        <span
+                            v-if="sendingInspectionReport"
+                            class="spinner-border spinner-border-sm me-1"
+                            aria-hidden="true"
+                        ></span>
+                        {{ $t("Send inspection report") }}
+                    </button>
                     <button
                         class="btn btn-sm btn-outline-danger"
                         :disabled="clearingAllEvents"
@@ -45,6 +61,25 @@
                     >
                         {{ $t("Clear All Events") }}
                     </button>
+                </div>
+                <div
+                    v-if="inspectionResult"
+                    class="alert py-2"
+                    :class="inspectionResultClass"
+                    data-testid="inspection-report-result"
+                >
+                    {{
+                        $t("inspectionReportResult", {
+                            total: inspectionResult.total,
+                            succeeded: inspectionResult.succeeded,
+                            failed: inspectionResult.failed,
+                        })
+                    }}
+                    <ul v-if="inspectionResult.failures.length" class="mb-0 mt-1">
+                        <li v-for="failure in inspectionResult.failures" :key="failure.notificationId">
+                            {{ failure.notificationName }}：{{ failure.message }}
+                        </li>
+                    </ul>
                 </div>
                 <table class="table table-borderless table-hover">
                     <thead>
@@ -143,6 +178,9 @@ export default {
             importantHeartBeatListLength: 0,
             displayedRecords: [],
             clearingAllEvents: false,
+            inspectionRecipientCount: 0,
+            sendingInspectionReport: false,
+            inspectionResult: null,
         };
     },
     computed: {
@@ -151,6 +189,12 @@ export default {
         },
         tableColumnCount() {
             return this.showGroupColumn ? 5 : 4;
+        },
+        inspectionResultClass() {
+            if (!this.inspectionResult || this.inspectionResult.failed === 0) {
+                return "alert-success";
+            }
+            return this.inspectionResult.succeeded === 0 ? "alert-danger" : "alert-warning";
         },
     },
     watch: {
@@ -167,6 +211,7 @@ export default {
 
     mounted() {
         this.getImportantHeartbeatListLength();
+        this.getInspectionReportAvailability();
 
         this.$root.emitter.on("newImportantHeartbeat", this.onNewImportantHeartbeat);
 
@@ -183,6 +228,46 @@ export default {
     },
 
     methods: {
+        /**
+         * Load the server-authoritative number of eligible report recipients.
+         * @returns {void}
+         */
+        getInspectionReportAvailability() {
+            this.$root.getSocket().emit("getInspectionReportAvailability", (res) => {
+                this.inspectionRecipientCount = res?.ok ? res.recipientCount : 0;
+            });
+        },
+
+        /**
+         * Ask the server to build and deliver a fresh inspection report.
+         * @returns {void}
+         */
+        sendInspectionReport() {
+            if (this.sendingInspectionReport || this.inspectionRecipientCount === 0) {
+                return;
+            }
+
+            this.sendingInspectionReport = true;
+            this.inspectionResult = null;
+            this.$root.getSocket().emit("sendInspectionReport", (res) => {
+                this.sendingInspectionReport = false;
+                if (!res?.ok) {
+                    this.$root.toastError(this.$t("inspectionReportSendFailed"));
+                    return;
+                }
+
+                this.inspectionResult = res.result;
+                if (res.result.failed === 0 && res.result.total > 0) {
+                    this.$root.toastSuccess(this.$t("inspectionReportSendSucceeded"));
+                } else if (res.result.succeeded > 0) {
+                    this.$root.toastError(this.$t("inspectionReportSendPartial"));
+                } else {
+                    this.$root.toastError(this.$t("inspectionReportSendFailed"));
+                }
+                this.getInspectionReportAvailability();
+            });
+        },
+
         /**
          * Returns the group (parent) name for a monitor, or empty string if none.
          * @param {number} monitorID - The monitor ID.

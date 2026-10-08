@@ -268,6 +268,21 @@ class Notification {
     }
 
     /**
+     * Send a structured inspection report through a provider that explicitly
+     * implements the inspection-report contract.
+     * @param {object} notification Notification configuration
+     * @param {object} report Safe versioned report DTO
+     * @returns {Promise<string>} Provider result
+     */
+    static async sendInspectionReport(notification, report) {
+        const provider = this.providerList[notification.type];
+        if (!provider || typeof provider.sendInspectionReport !== "function") {
+            throw new Error("Notification type does not support inspection reports");
+        }
+        return provider.sendInspectionReport(notification, report);
+    }
+
+    /**
      * Save a notification
      * @param {object} notification Notification to save
      * @param {?number} notificationID ID of notification to update
