@@ -14,20 +14,12 @@ import { createAuthMiddleware } from "better-auth/api";
 import * as oldAuth from "./auth.js";
 import { hasUser } from "./routers/better-auth-router";
 import { symmetricEncrypt } from "better-auth/crypto";
+// @ts-ignore
+import { restoreLegacyResourceOwners } from "./legacy-user-resources.js";
 
 export type BetterAuthUser = ReturnType<typeof createAuthInstance>["$Infer"]["Session"]["user"];
 
 let authInstance: ReturnType<typeof createAuthInstance>;
-
-const LEGACY_USER_RESOURCE_TABLES = [
-    "docker_host",
-    "proxy",
-    "monitor",
-    "maintenance",
-    "notification",
-    "api_key",
-    "remote_browser",
-];
 
 /**
  * Get the singleton instance of better-auth
@@ -323,19 +315,9 @@ export async function migrateUser(username: string, password: string) {
                 },
             });
 
-            // The Better Auth foreign-key migration preserves legacy numeric
-            // user IDs as strings. Reassign existing resources before scoped
-            // queries start using the new Better Auth user ID.
-            await R.knex.transaction(async (trx) => {
-                for (const table of LEGACY_USER_RESOURCE_TABLES) {
-                    await trx(table)
-                        // Knex recreates these columns while changing the ID
-                        // type, so SQLite upgrades can leave legacy owners null.
-                        .whereNull("user_id")
-                        .orWhere("user_id", String(legacyUser.id))
-                        .update({ user_id: newUser.user.id });
-                }
-            });
+            // The foreign-key upgrade drops legacy owners. The same guarded
+            // repair also runs as a migration for users who already signed in.
+            await R.knex.transaction(restoreLegacyResourceOwners);
 
             // Migrate 2FA settings if they exist
             if (legacyUser.twofa_status) {
