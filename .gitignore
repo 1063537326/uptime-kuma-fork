@@ -28,3 +28,6 @@ extra/exe-builder/obj
 
 # Local integration documents
 /DOCS/
+
+# Local agent specs and tickets
+/.scratch/
