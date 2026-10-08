@@ -13,13 +13,12 @@
 
     <div class="mb-3">
         <label for="talkin-token" class="form-label">{{ $t("Talkin Token") }}</label>
-        <input
-            id="talkin-token"
+        <HiddenInput
             v-model="$parent.notification.talkinToken"
-            type="password"
+            input-id="talkin-token"
             autocomplete="new-password"
-            class="form-control"
-            required
+            :maxlength="null"
+            :required="true"
         />
         <div class="form-text">{{ $t("talkinTokenDescription") }}</div>
     </div>
@@ -50,3 +49,11 @@
 
     <div class="form-text">{{ $t("talkinPlainTextDescription") }}</div>
 </template>
+
+<script>
+import HiddenInput from "../HiddenInput.vue";
+
+export default {
+    components: { HiddenInput },
+};
+</script>

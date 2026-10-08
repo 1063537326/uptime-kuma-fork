@@ -1,6 +1,7 @@
 <template>
     <div class="input-group mb-3">
         <input
+            :id="inputId"
             ref="input"
             v-model="model"
             :type="visibility"
@@ -24,6 +25,11 @@
 <script>
 export default {
     props: {
+        /** Optional ID for an accessible label on the underlying input. */
+        inputId: {
+            type: String,
+            default: undefined,
+        },
         /** The value of the input */
         modelValue: {
             type: String,

@@ -98,6 +98,14 @@ test.describe("Inspection and notification UI", () => {
         await page.getByLabel("Notification Type").selectOption("Talkin");
         await expect(page.getByLabel("Talkin API URL")).toHaveAttribute("required", "");
         await expect(page.getByLabel("Talkin Token")).toHaveAttribute("type", "password");
+        await expect(page.getByLabel("Talkin Token")).not.toHaveAttribute("maxlength", /./);
+        const token = page.getByLabel("Talkin Token");
+        await token.fill("t".repeat(300));
+        await token.locator("..").locator("a").click();
+        await expect(token).toHaveAttribute("type", "text");
+        await expect(token).toHaveValue("t".repeat(300));
+        await token.locator("..").locator("a").click();
+        await expect(token).toHaveAttribute("type", "password");
         await expect(page.getByLabel("Talkin App ID")).toHaveAttribute("required", "");
         await expect(page.getByLabel("Talkin User ID")).toHaveAttribute("required", "");
         await expect(page.getByText(/Broadcast, all-user, and group targets are not supported/)).toBeVisible();
