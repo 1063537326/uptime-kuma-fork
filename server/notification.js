@@ -1,4 +1,5 @@
 const { R } = require("redbean-node");
+const { validateInspectionTemplate } = require("./notification-providers/webhook-inspection-template");
 const { log } = require("../src/util");
 const Alerta = require("./notification-providers/alerta");
 const AlertNow = require("./notification-providers/alertnow");
@@ -290,6 +291,7 @@ class Notification {
      * @returns {Promise<Bean>} Notification that was saved
      */
     static async save(notification, notificationID, userID) {
+        await validateInspectionTemplate(notification);
         let bean;
 
         if (notificationID) {

@@ -131,6 +131,7 @@ const {
 
 log.debug("server", "Importing Notification");
 const { Notification } = require("./notification");
+const { previewInspectionTemplate } = require("./notification-providers/webhook-inspection-template");
 Notification.init();
 log.debug("server", "Importing Web-Push");
 const webpush = require("web-push");
@@ -1209,6 +1210,15 @@ app.use(function (req, res, next) {
                     ok: false,
                     msg: e.message,
                 });
+            }
+        });
+
+        socket.on("previewWebhookInspectionTemplate", async (template, callback) => {
+            try {
+                checkLogin(socket);
+                callback({ ok: true, ...await previewInspectionTemplate(template) });
+            } catch (error) {
+                callback({ ok: false, msg: error.message });
             }
         });
 

@@ -110,6 +110,17 @@ describe("Notification bulk apply", () => {
             /notification not found/
         );
     });
+
+    test("saving an invalid independent inspection template is rejected before persistence or bulk apply", async () => {
+        await assert.rejects(Notification.save({
+            type: "webhook", name: "Invalid inspection", webhookInspectionBody: "custom",
+            webhookInspectionCustomBody: "private-token {% if summary.offline %}", applyExistingScope: "all",
+        }, null, userOne.id), error => {
+            assert.match(error.message, /Invalid inspection template/);
+            assert.doesNotMatch(error.stack, /private-token/);
+            return true;
+        });
+    });
 });
 
 /**
