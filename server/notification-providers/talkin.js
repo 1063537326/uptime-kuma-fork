@@ -71,7 +71,16 @@ class Talkin extends NotificationProvider {
     }
 }
 
-class TalkinResponseError extends Error {}
+class TalkinResponseError extends Error {
+    /**
+     * @param {string} message Internal diagnostic message
+     * @param {?number} code Stable Talkin response code
+     */
+    constructor(message, code = null) {
+        super(message);
+        this.code = code;
+    }
+}
 
 /**
  * Check business acceptance without leaking server response details.
@@ -85,13 +94,13 @@ function assertTalkinResponse(data) {
         throw new TalkinResponseError("Talkin returned a malformed response.");
     }
     if (Number(code) !== 200) {
-        throw new TalkinResponseError(`Talkin rejected the message (${Number(code)}).`);
+        throw new TalkinResponseError(`Talkin rejected the message (${Number(code)}).`, Number(code));
     }
     if (typeof data.data?.data !== "boolean") {
         throw new TalkinResponseError("Talkin returned a malformed response.");
     }
     if (data.data.data !== true) {
-        throw new TalkinResponseError("Talkin rejected the message (200).");
+        throw new TalkinResponseError("Talkin rejected the message (200).", 200);
     }
 }
 

@@ -199,6 +199,8 @@
     "inspectionReportSendSucceeded": "巡检报告发送成功。",
     "inspectionReportSendPartial": "巡检报告仅发送到部分接收方。",
     "inspectionReportSendFailed": "巡检报告发送失败。",
+    "inspectionReportDeliveryFailed": "发送失败，请检查通知配置和接收端日志。",
+    "inspectionReportTalkinRejected": "Talkin 拒绝了消息（错误码：{code}）。",
     "Talkin API URL": "Talkin 接口地址",
     "Talkin Token": "Talkin Token",
     "Talkin App ID": "Talkin App ID",

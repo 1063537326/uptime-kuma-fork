@@ -219,6 +219,40 @@ describe("Configurable inspection reports", () => {
         assert.equal(reports.length, 1);
     });
 
+    test("numeric manual and string scheduled owner IDs share the same mutex", async () => {
+        await db("monitor").where({ id: 1 }).update({ user_id: "1" });
+        await db("notification").where({ id: 1 }).update({ user_id: "1" });
+        await scheduler.saveSettings(1, { enabled: true, timezone: "Asia/Shanghai", times: ["09:30"] });
+        await scheduler.start();
+        let release;
+        let arrived;
+        let deliveries = 0;
+        const arrival = new Promise((resolve) => {
+            arrived = resolve;
+        });
+        const gate = new Promise((resolve) => {
+            release = resolve;
+        });
+        accept = () => {
+            deliveries++;
+            if (deliveries === 1) {
+                arrived();
+                return gate;
+            }
+        };
+        now = new Date("2026-10-08T01:30:00Z");
+        const scheduled = scheduler.runDue();
+        await arrival;
+        try {
+            await assert.rejects(() => InspectionReportService.sendManual(1, now), /already being sent/);
+            assert.equal(reports.length, 1);
+        } finally {
+            release();
+            await scheduler.stop();
+            await scheduled;
+        }
+    });
+
     test("a failed scheduled request is not retried on a duplicate tick or settings reload", async () => {
         httpStatus = 500;
         const config = { enabled: true, timezone: "Asia/Shanghai", times: ["09:30"] };

@@ -77,7 +77,7 @@
                     }}
                     <ul v-if="inspectionResult.failures.length" class="mb-0 mt-1">
                         <li v-for="failure in inspectionResult.failures" :key="failure.notificationId">
-                            {{ failure.notificationName }}：{{ failure.message }}
+                            {{ failure.notificationName }}：{{ failure.messageKey ? $t(failure.messageKey, failure.messageParams) : failure.message }}
                         </li>
                     </ul>
                 </div>

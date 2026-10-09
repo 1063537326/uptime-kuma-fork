@@ -189,8 +189,16 @@ describe("Inspection report service", () => {
     });
 
     test("known business errors remain actionable without exposing arbitrary errors", () => {
-        assert.strictEqual(sanitizeDeliveryError(new TalkinResponseError("Talkin rejected the message (1009).")), "Talkin rejected the message (1009).");
-        assert.doesNotMatch(sanitizeDeliveryError(new Error("private request body")), /private/);
+        assert.deepStrictEqual(
+            sanitizeDeliveryError(new TalkinResponseError("Talkin rejected the message (1009).", 1009)),
+            {
+                messageKey: "inspectionReportTalkinRejected",
+                messageParams: { code: 1009 },
+            }
+        );
+        const sanitized = sanitizeDeliveryError(new Error("private request body"));
+        assert.deepStrictEqual(sanitized, { messageKey: "inspectionReportDeliveryFailed" });
+        assert.doesNotMatch(JSON.stringify(sanitized), /private/);
     });
 
     test("manual delivery continues after one recipient fails and exposes only a safe report and errors", async () => {
@@ -201,7 +209,8 @@ describe("Inspection report service", () => {
         assert.strictEqual(result.total, 2);
         assert.strictEqual(result.succeeded, 1);
         assert.strictEqual(result.failed, 1);
-        assert.strictEqual(result.failures[0].message, "发送失败，请检查通知配置和接收端日志。");
+        assert.strictEqual(result.failures[0].messageKey, "inspectionReportDeliveryFailed");
+        assert.strictEqual(result.failures[0].message, undefined);
         assert.strictEqual(capturedReport.schemaVersion, 1);
         assert.strictEqual(capturedReport.statusSummary.total, 2);
         assert.doesNotMatch(serializedReport, /private-one|private-two|must-not-reach-browser|webhookURL|hostname/);
@@ -298,7 +307,9 @@ describe("Inspection report service", () => {
         const failed = await InspectionReportService.sendManual(userOne.id);
         assert.strictEqual(failed.succeeded, 1);
         assert.strictEqual(failed.failed, 2);
-        assert.ok(failed.failures.some((failure) => failure.channel === "Talkin" && failure.message.includes("1009")));
+        assert.ok(failed.failures.some((failure) => failure.channel === "Talkin" &&
+            failure.messageKey === "inspectionReportTalkinRejected" &&
+            failure.messageParams.code === 1009));
         assert.doesNotMatch(JSON.stringify(failed), /private-token|private-response/);
         for (const enabled of [undefined, false, "true", 1]) {
             notification.config = JSON.stringify({ ...config, enableInspectionReports: enabled });

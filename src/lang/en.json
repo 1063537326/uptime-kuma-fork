@@ -232,6 +232,8 @@
     "inspectionReportSendSucceeded": "Inspection report sent successfully.",
     "inspectionReportSendPartial": "Inspection report was only delivered to some recipients.",
     "inspectionReportSendFailed": "Inspection report could not be delivered.",
+    "inspectionReportDeliveryFailed": "Delivery failed. Check the notification configuration and receiver logs.",
+    "inspectionReportTalkinRejected": "Talkin rejected the message (code: {code}).",
     "Talkin API URL": "Talkin API URL",
     "Talkin Token": "Talkin Token",
     "Talkin App ID": "Talkin App ID",

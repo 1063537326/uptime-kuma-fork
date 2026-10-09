@@ -97,6 +97,12 @@ class Webhook extends NotificationProvider {
                 }
             }
 
+            if (report) {
+                // Keep a transport-level deduplication key even when a custom
+                // body intentionally omits the report DTO or identifier.
+                config.headers["X-Uptime-Kuma-Report-Id"] = report.reportId;
+            }
+
             config = this.getAxiosConfigWithProxy(config);
 
             const response = httpMethod === "get"

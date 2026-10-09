@@ -45,6 +45,7 @@ describe("Webhook independent inspection templates", () => {
         await provider.sendInspectionReport(config, report);
         assert.equal(received.at(-1).body, "## inspection-contract\n2 / 3 / 测试 API\n2026-10-08T09:30:00.000Z / Asia/Shanghai");
         assert.equal(received.at(-1).headers["x-report-test"], "retained");
+        assert.equal(received.at(-1).headers["x-uptime-kuma-report-id"], "inspection-contract");
         await provider.send(config, "down");
         assert.equal(received.at(-1).body, "alert=down");
     });
@@ -76,10 +77,17 @@ describe("Webhook independent inspection templates", () => {
 
     test("JSON override preserves the versioned DTO and GET ignores POST-only template settings", async () => {
         const provider = new Webhook();
-        const config = { webhookURL: url, webhookContentType: "custom", webhookCustomBody: "old={{ msg }}", webhookInspectionBody: "json" };
+        const config = {
+            webhookURL: url,
+            webhookContentType: "custom",
+            webhookCustomBody: "old={{ msg }}",
+            webhookInspectionBody: "json",
+            webhookAdditionalHeaders: JSON.stringify({ "X-Uptime-Kuma-Report-Id": "must-not-override" }),
+        };
         await provider.sendInspectionReport(config, report);
         assert.deepEqual(JSON.parse(received.at(-1).body), report);
         assert.match(received.at(-1).headers["content-type"], /application\/json/);
+        assert.equal(received.at(-1).headers["x-uptime-kuma-report-id"], "inspection-contract");
         await provider.sendInspectionReport({ ...config, httpMethod: "get", webhookInspectionBody: "custom", webhookInspectionCustomBody: "{% invalid %}" }, report);
         const request = received.at(-1);
         assert.equal(request.method, "GET");

@@ -48,7 +48,7 @@ class InspectionReportService {
 
     /**
      * Deliver a scheduled report through the same use case as manual reports.
-     * @param {string} userID Resource owner
+     * @param {string|number} userID Resource owner
      * @param {Date} generatedAt Server clock
      * @param {object} options Validated schedule settings and period
      * @returns {Promise<object>} Safe delivery summary
@@ -66,11 +66,12 @@ class InspectionReportService {
      * @returns {Promise<object>} Safe delivery summary
      */
     static async send(userID, trigger, generatedAt, options = {}) {
-        if (activeUsers.has(userID)) {
+        const userKey = String(userID);
+        if (activeUsers.has(userKey)) {
             throw new Error("An inspection report is already being sent.");
         }
 
-        activeUsers.add(userID);
+        activeUsers.add(userKey);
         try {
             const recipients = await getEligibleRecipients(userID);
             if (recipients.length === 0) {
@@ -113,7 +114,7 @@ class InspectionReportService {
                     notificationId: result.reason.recipient.id,
                     notificationName: result.reason.recipient.name,
                     channel: result.reason.recipient.config.type,
-                    message: sanitizeDeliveryError(result.reason.cause),
+                    ...sanitizeDeliveryError(result.reason.cause),
                 }));
             const succeeded = settled.length - failures.length;
 
@@ -126,7 +127,7 @@ class InspectionReportService {
                 failures,
             };
         } finally {
-            activeUsers.delete(userID);
+            activeUsers.delete(userKey);
         }
     }
 }
@@ -509,13 +510,16 @@ function normalizeHeartbeatTime(value) {
 /**
  * Return a stable browser-safe error without URLs, headers, bodies, or tokens.
  * @param {Error} error Delivery error
- * @returns {string} Safe delivery error
+ * @returns {object} Safe delivery error fields
  */
 function sanitizeDeliveryError(error) {
-    if (error instanceof TalkinResponseError) {
-        return error.message;
+    if (error instanceof TalkinResponseError && Number.isFinite(error.code)) {
+        return {
+            messageKey: "inspectionReportTalkinRejected",
+            messageParams: { code: error.code },
+        };
     }
-    return "发送失败，请检查通知配置和接收端日志。";
+    return { messageKey: "inspectionReportDeliveryFailed" };
 }
 
 module.exports = {
