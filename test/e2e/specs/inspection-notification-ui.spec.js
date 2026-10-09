@@ -158,6 +158,75 @@ test.describe("Inspection and notification UI", () => {
         await expect(page.getByText(/Broadcast, all-user, and group targets are not supported/)).toBeVisible();
     });
 
+    test("Talkin inspection opt-in persists, targets one user and exposes safe delivery failures", async ({ page }) => {
+        const reports = [];
+        let rejectReport = false;
+        const receiver = createServer(async (req, res) => {
+            const chunks = [];
+            for await (const chunk of req) {
+                chunks.push(chunk);
+            }
+            const body = new URLSearchParams(Buffer.concat(chunks).toString());
+            const isReport = body.get("message")?.includes("手动巡检");
+            if (isReport) {
+                reports.push(Object.fromEntries(body));
+            }
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify(isReport && rejectReport ? { code: 1009, msg: "private-response" } : { code: 200, data: { data: true } }));
+        });
+        await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+        try {
+            await openNotificationDialog(page);
+            await page.getByLabel("Notification Type").selectOption("Talkin");
+            const optIn = page.getByLabel("Receive inspection reports");
+            await expect(optIn).not.toBeChecked();
+            await page.locator("#notification-name").fill("Talkin inspection receiver");
+            await page.getByLabel("Talkin API URL").fill(`http://127.0.0.1:${receiver.address().port}/report`);
+            await page.getByLabel("Talkin Token").fill("private-test-token");
+            await page.getByLabel("Talkin App ID").fill("test-app");
+            await page.getByLabel("Talkin User ID").fill("test-user");
+            await optIn.check();
+            await page.getByLabel("Default enabled for non-group monitors").check();
+            await page.locator(".modal.show").getByRole("button", { name: "Save", exact: true }).click();
+            await expect(page.locator(".modal.show")).toHaveCount(0);
+            await page.reload();
+            await page.getByRole("listitem").filter({ hasText: "Talkin inspection receiver" }).getByRole("link", { name: "Edit", exact: true }).click();
+            await expect(optIn).toBeChecked();
+            await page.locator(".modal.show").getByRole("button", { name: "Save", exact: true }).click();
+            await expect(page.locator(".modal.show")).toHaveCount(0);
+            await page.goto("./add");
+            await page.getByTestId("friendly-name-input").fill("Talkin local monitor");
+            await page.locator("#url").fill("http://127.0.0.1:3001");
+            await page.getByTestId("save-button").click();
+            await expect(page).toHaveURL(/\/dashboard\/\d+$/);
+            await page.goto("./dashboard");
+            const send = page.getByTestId("send-inspection-report");
+            await expect(send).toBeEnabled();
+            await send.click();
+            await expect(page.getByTestId("inspection-report-result")).toContainText("1 succeeded, 0 failed, 1 total");
+            expect(reports).toHaveLength(1);
+            expect(reports[0].userId).toBe("test-user");
+            expect(reports[0].msgType).toBe("text");
+            rejectReport = true;
+            await send.click();
+            await expect(page.getByTestId("inspection-report-result")).toContainText("0 succeeded, 1 failed, 1 total");
+            await expect(page.getByTestId("inspection-report-result")).toContainText("1009");
+            await expect(page.locator("body")).not.toContainText("private-response");
+            await expect(page.locator("body")).not.toContainText("private-test-token");
+            expect(reports).toHaveLength(2);
+            expect(reports[0].msgId).not.toBe(reports[1].msgId);
+            await page.goto("./settings/notifications");
+            await page.getByRole("listitem").filter({ hasText: "Talkin inspection receiver" }).getByRole("link", { name: "Edit", exact: true }).click();
+            await optIn.uncheck();
+            await page.locator(".modal.show").getByRole("button", { name: "Save", exact: true }).click();
+            await expect(page.locator(".modal.show")).toHaveCount(0);
+            await page.goto("./dashboard");
+            await expect(send).toBeDisabled();
+        } finally {
+            await new Promise((resolve) => receiver.close(resolve));
+        }
+    });
+
     test("dashboard disables manual reports when no eligible recipient exists", async ({ page }) => {
         await page.goto("./dashboard");
         const button = page.getByTestId("send-inspection-report");

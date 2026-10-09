@@ -47,6 +47,21 @@
         <div class="form-text">{{ $t("talkinUserIDDescription") }}</div>
     </div>
 
+    <div class="mb-3">
+        <div class="form-check form-switch">
+            <input
+                id="talkin-enable-inspection-reports"
+                v-model="$parent.notification.enableInspectionReports"
+                class="form-check-input"
+                type="checkbox"
+            />
+            <label class="form-check-label" for="talkin-enable-inspection-reports">
+                {{ $t("Receive inspection reports") }}
+            </label>
+        </div>
+        <div class="form-text">{{ $t("talkinInspectionReportsDescription") }}</div>
+    </div>
+
     <div class="form-text">{{ $t("talkinPlainTextDescription") }}</div>
 </template>
 
