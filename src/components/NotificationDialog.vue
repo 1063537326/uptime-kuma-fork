@@ -182,7 +182,7 @@
                         <button type="button" class="btn btn-warning" :disabled="processing" @click="test">
                             {{ $t("Test") }}
                         </button>
-                        <button type="submit" class="btn btn-primary" :disabled="processing">
+                        <button type="submit" class="btn btn-primary" :disabled="processing || !applyPreviewReady">
                             <div v-if="processing" class="spinner-border spinner-border-sm me-1"></div>
                             {{ $t("Save") }}
                         </button>
@@ -220,6 +220,8 @@ export default {
             model: null,
             processing: false,
             applyPreviewLoading: false,
+            applyPreviewReady: true,
+            applyPreviewRequestID: 0,
             applyPreview: {
                 additions: 0,
                 removals: 0,
@@ -516,26 +518,37 @@ export default {
          */
         refreshApplyPreview() {
             const scope = this.notification.applyExistingScope || "none";
+            const requestID = ++this.applyPreviewRequestID;
             if (scope === "none") {
                 this.applyPreview = { additions: 0, removals: 0 };
                 this.applyPreviewLoading = false;
+                this.applyPreviewReady = true;
                 return;
             }
 
+            const removeFromGroups = this.notification.removeFromGroups === true;
             this.applyPreviewLoading = true;
+            this.applyPreviewReady = false;
             this.$root
                 .getSocket()
                 .emit(
                     "previewNotificationApply",
                     this.id,
                     scope,
-                    this.notification.removeFromGroups === true,
+                    removeFromGroups,
                     (res) => {
+                        if (requestID !== this.applyPreviewRequestID ||
+                            scope !== this.notification.applyExistingScope ||
+                            removeFromGroups !== (this.notification.removeFromGroups === true)) {
+                            return;
+                        }
                         this.applyPreviewLoading = false;
                         if (res.ok) {
                             this.applyPreview = res.preview;
+                            this.applyPreviewReady = true;
                         } else {
                             this.applyPreview = { additions: 0, removals: 0 };
+                            this.applyPreviewReady = false;
                         }
                     }
                 );
@@ -546,6 +559,9 @@ export default {
          * @returns {void}
          */
         submit() {
+            if (!this.applyPreviewReady) {
+                return;
+            }
             this.processing = true;
             this.$root.getSocket().emit("addNotification", this.notification, this.id, (res) => {
                 this.$root.toastRes(res);

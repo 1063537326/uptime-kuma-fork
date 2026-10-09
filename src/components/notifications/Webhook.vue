@@ -146,6 +146,7 @@ export default {
             previewResult: null,
             inspectionExample: [
                 "## Uptime Kuma · {{ report.period }}",
+                "报告标识：{{ report.reportId }}",
                 "{% if summary.offline > 0 %}🔴 {{ summary.offline }} 项离线{% else %}📋 请查看状态概览{% endif %}",
                 "- 监控项：{{ summary.total }}",
                 "- 在线：{{ summary.online }} / 离线：{{ summary.offline }}",

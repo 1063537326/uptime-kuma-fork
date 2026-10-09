@@ -25,6 +25,22 @@ test.describe("Inspection and notification UI", () => {
         await expect(page.getByText(/This save will add \d+ binding/)).toBeVisible();
     });
 
+    test("bulk apply cannot save before the current preview is ready", async ({ page }) => {
+        await openNotificationDialog(page);
+        const save = page.locator(".modal.show").getByRole("button", { name: "Save", exact: true });
+        const disabledBeforeServerReply = await page.getByLabel("Apply to existing monitors").evaluate(async (scope) => {
+            scope.value = "non-group";
+            scope.dispatchEvent(new Event("change", { bubbles: true }));
+            // Let Vue flush its watcher and DOM update without yielding to the
+            // socket response task.
+            await Promise.resolve();
+            await Promise.resolve();
+            return scope.closest("form").querySelector("button[type='submit']").disabled;
+        });
+        expect(disabledBeforeServerReply).toBe(true);
+        await expect(save).toBeEnabled({ timeout: 10000 });
+    });
+
     test("Webhook has an explicit inspection report opt-in", async ({ page }) => {
         await openNotificationDialog(page);
         await page.getByLabel("Notification Type").selectOption("webhook");
@@ -236,6 +252,7 @@ test.describe("Inspection and notification UI", () => {
 
     test("dashboard sends a daily inspection report through the configured Webhook", async ({ page }) => {
         const reports = [];
+        let rejectReport = false;
         const receiver = createServer(async (req, res) => {
             const chunks = [];
             for await (const chunk of req) {
@@ -245,7 +262,8 @@ test.describe("Inspection and notification UI", () => {
             if (payload.reportType === "inspection") {
                 reports.push(payload);
             }
-            res.end("accepted");
+            res.statusCode = rejectReport ? 500 : 200;
+            res.end(rejectReport ? "private-webhook-response" : "accepted");
         });
         await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
         try {
@@ -273,6 +291,12 @@ test.describe("Inspection and notification UI", () => {
             expect(reports[0].period).toBe("manual");
             expect(reports[0].today).toHaveProperty("failures");
             expect(reports[0].window).toHaveProperty("startLocal");
+            rejectReport = true;
+            await send.click();
+            await expect(page.getByTestId("inspection-report-result")).toContainText("0 succeeded, 1 failed, 1 total");
+            await expect(page.getByTestId("inspection-report-result")).toContainText("Delivery failed. Check the notification configuration and receiver logs.");
+            await expect(page.locator("body")).not.toContainText("inspectionReportDeliveryFailed");
+            await expect(page.locator("body")).not.toContainText("private-webhook-response");
             await page.screenshot({ path: "private/task05-manual-report.png", animations: "disabled" });
         } finally {
             await new Promise((resolve) => receiver.close(resolve));

@@ -34,11 +34,12 @@ test.describe("Independent Webhook inspection templates", () => {
             await expect(mode).toHaveValue("inherit");
             await mode.selectOption("custom");
             const body = page.getByLabel("Inspection Liquid template", { exact: true });
+            const save = page.locator(".modal.show").getByRole("button", { name: "Save", exact: true });
             await body.fill("{% if private-token %}");
             await page.getByRole("button", { name: "Preview inspection template", exact: true }).click();
             await expect(page.getByTestId("inspection-template-error")).toContainText("Invalid inspection template");
             await expect(page.getByTestId("inspection-template-error")).not.toContainText("private-token");
-            await page.locator(".modal.show").getByRole("button", { name: "Save", exact: true }).click();
+            await save.click();
             await expect(page.getByText(/Invalid inspection template/).last()).toBeVisible();
             await expect(page.locator(".modal.show")).toBeVisible();
             expect(requests).toHaveLength(0);
@@ -55,14 +56,16 @@ test.describe("Independent Webhook inspection templates", () => {
                 { msg: "Independent report Testing", monitor: null, heartbeat: null },
             ]);
             await page.getByLabel("Default enabled for non-group monitors").check();
-            await page.locator(".modal.show").getByRole("button", { name: "Save", exact: true }).click();
-            await expect(page.locator(".modal.show")).toHaveCount(0);
+            await expect(save).toBeEnabled();
+            await save.click();
+            await expect(page.locator(".modal.show")).toHaveCount(0, { timeout: 10000 });
             await page.reload();
             await page.getByRole("listitem").filter({ hasText: "Independent report" }).getByRole("link", { name: "Edit", exact: true }).click();
             await expect(mode).toHaveValue("custom");
             await expect(body).toHaveValue(template);
-            await page.locator(".modal.show").getByRole("button", { name: "Save", exact: true }).click();
-            await expect(page.locator(".modal.show")).toHaveCount(0);
+            await expect(save).toBeEnabled();
+            await save.click();
+            await expect(page.locator(".modal.show")).toHaveCount(0, { timeout: 10000 });
             await page.goto("./add");
             await page.getByTestId("friendly-name-input").fill("Template monitor");
             await page.locator("#url").fill("http://127.0.0.1:3001");
