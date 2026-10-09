@@ -3,6 +3,7 @@ const axios = require("axios");
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 const { DOWN, UP } = require("../../src/util");
+const { buildFeishuInspectionCard } = require("./feishu-inspection-card");
 
 dayjs.extend(utc);
 
@@ -11,6 +12,27 @@ const ERROR_SUMMARY_LIMIT = 300;
 
 class Feishu extends NotificationProvider {
     name = "Feishu";
+
+    /**
+     * Deliver an inspection card independently of real-time heartbeats.
+     * @param {object} notification Notification configuration
+     * @param {object} report Safe inspection report DTO
+     * @returns {Promise<string>} Acceptance message
+     */
+    async sendInspectionReport(notification, report) {
+        try {
+            const response = await axios.post(notification.feishuWebHookUrl, buildFeishuInspectionCard(report),
+                this.getAxiosConfigWithProxy({ timeout: 10000 }));
+            const code = response.data?.code !== undefined ? response.data.code : response.data?.StatusCode;
+            if (code !== 0) {
+                throw new Error("Feishu rejected the inspection report.");
+            }
+            return "Sent Successfully.";
+        } catch (error) {
+            // Never expose the secret webhook URL or the upstream response.
+            throw new Error("Feishu inspection report delivery failed.");
+        }
+    }
 
     /**
      * @inheritdoc

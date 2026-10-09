@@ -27,12 +27,12 @@ const activeUsers = new Set();
  */
 class InspectionReportService {
     /**
-     * Return the number of eligible Webhook recipients for one user.
+     * Return the number of eligible inspection recipients for one user.
      * @param {number} userID Current user ID
      * @returns {Promise<number>} Recipient count
      */
     static async getEligibleRecipientCount(userID) {
-        return (await getEligibleWebhookRecipients(userID)).length;
+        return (await getEligibleRecipients(userID)).length;
     }
 
     /**
@@ -72,7 +72,7 @@ class InspectionReportService {
 
         activeUsers.add(userID);
         try {
-            const recipients = await getEligibleWebhookRecipients(userID);
+            const recipients = await getEligibleRecipients(userID);
             if (recipients.length === 0) {
                 return {
                     outcome: "no-recipients",
@@ -98,7 +98,7 @@ class InspectionReportService {
                         log.warn(
                             "inspection-report",
                             `Report ${report.reportId} failed for notification ${recipient.id} after ${Date.now() - startedAt} ms ` +
-                            `(trigger=${report.trigger}, channel=webhook, window=${report.window.start}/${report.window.end})`
+                            `(trigger=${report.trigger}, channel=${recipient.config.type}, window=${report.window.start}/${report.window.end})`
                         );
                         const deliveryError = new Error("Inspection report delivery failed.", { cause: error });
                         deliveryError.recipient = recipient;
@@ -112,7 +112,7 @@ class InspectionReportService {
                 .map((result) => ({
                     notificationId: result.reason.recipient.id,
                     notificationName: result.reason.recipient.name,
-                    channel: "webhook",
+                    channel: result.reason.recipient.config.type,
                     message: sanitizeDeliveryError(result.reason.cause),
                 }));
             const succeeded = settled.length - failures.length;
@@ -458,11 +458,11 @@ async function getDayEvents(monitorIDs, start, end) {
 }
 
 /**
- * Load eligible Webhook recipients, scoped and deduplicated by notification.
+ * Load supported inspection recipients, scoped and deduplicated by notification.
  * @param {number} userID Current user ID
  * @returns {Promise<Array<{ id: number, name: string, config: object }>>} Recipients
  */
-async function getEligibleWebhookRecipients(userID) {
+async function getEligibleRecipients(userID) {
     const rows = await R.getAll(
         `SELECT DISTINCT notification.id, notification.name, notification.config
          FROM notification
@@ -478,7 +478,7 @@ async function getEligibleWebhookRecipients(userID) {
     for (const row of rows) {
         try {
             const config = JSON.parse(row.config);
-            if (config.type === "webhook" && config.enableInspectionReports === true) {
+            if (["webhook", "Feishu"].includes(config.type) && config.enableInspectionReports === true) {
                 recipients.push({
                     id: row.id,
                     name: row.name,
@@ -523,7 +523,7 @@ module.exports = {
     buildCurrentStatusReport,
     buildCurrentStatusReportFromData,
     classifyMonitorState,
-    getEligibleWebhookRecipients,
+    getEligibleRecipients,
     isEffectivelyPaused,
     isHeartbeatStale,
     sanitizeDeliveryError,

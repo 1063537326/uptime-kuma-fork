@@ -11,7 +11,7 @@ const {
     InspectionReportService,
     buildCurrentStatusReportFromData,
     classifyMonitorState,
-    getEligibleWebhookRecipients,
+    getEligibleRecipients,
     sanitizeDeliveryError,
 } = require("../../server/inspection-report-service");
 const { TalkinResponseError } = require("../../server/notification-providers/talkin");
@@ -26,6 +26,7 @@ describe("Inspection report service", () => {
     let monitorOne;
     let monitorTwo;
     let capturedReport;
+    const capturedCards = [];
 
     before(async () => {
         db = knex({
@@ -60,6 +61,10 @@ describe("Inspection report service", () => {
             res.json({ ok: true });
         });
         app.post("/fail", (req, res) => res.status(500).json({ secret: "must-not-reach-browser" }));
+        app.post("/feishu", (req, res) => {
+            capturedCards.push(req.body);
+            res.json({ code: 0, msg: "success" });
+        });
         await new Promise((resolve) => {
             server = app.listen(0, "127.0.0.1", resolve);
         });
@@ -173,7 +178,7 @@ describe("Inspection report service", () => {
     });
 
     test("recipient query is user-scoped, enabled-only, and deduplicated", async () => {
-        const recipients = await getEligibleWebhookRecipients(userOne.id);
+        const recipients = await getEligibleRecipients(userOne.id);
         assert.deepStrictEqual(recipients.map((recipient) => recipient.name).sort(), ["Fail", "OK"]);
     });
 
@@ -194,6 +199,65 @@ describe("Inspection report service", () => {
         assert.strictEqual(capturedReport.schemaVersion, 1);
         assert.strictEqual(capturedReport.statusSummary.total, 2);
         assert.doesNotMatch(serializedReport, /private-one|private-two|must-not-reach-browser|webhookURL|hostname/);
+    });
+
+    test("an opted-in Feishu recipient receives one inspection card across multiple leaf bindings", async (t) => {
+        const notification = R.dispense("notification");
+        notification.user_id = userOne.id;
+        notification.name = "Feishu reports";
+        notification.config = JSON.stringify({ type: "Feishu", enableInspectionReports: true, feishuWebHookUrl: `${baseURL}/feishu` });
+        await R.store(notification);
+        t.after(async () => {
+            await R.exec("DELETE FROM monitor_notification WHERE notification_id = ?", [notification.id]);
+            await R.trash(notification);
+        });
+        await createRelation(monitorOne.id, notification.id);
+        await createRelation(monitorTwo.id, notification.id);
+        assert.strictEqual(await InspectionReportService.getEligibleRecipientCount(userOne.id), 3);
+        const result = await InspectionReportService.sendManual(userOne.id);
+        assert.strictEqual(result.succeeded, 2);
+        assert.strictEqual(result.failed, 1);
+        assert.strictEqual(capturedCards.length, 1);
+        assert.strictEqual(capturedCards[0].msg_type, "interactive");
+        assert.strictEqual(capturedCards[0].card.header.template, "red");
+        assert.match(capturedCards[0].card.header.title.content, /手动巡检/);
+        assert.doesNotMatch(JSON.stringify(capturedCards[0]), /private-one|private-two|heartbeat|feishuWebHookUrl/);
+
+        for (const [period, title] of [["morning", "早报"], ["evening", "晚报"]]) {
+            const scheduled = await InspectionReportService.sendScheduled(userOne.id, new Date("2026-10-08T09:30:00Z"), { period, timezone: "Asia/Shanghai" });
+            assert.strictEqual(scheduled.succeeded, 2);
+            assert.match(capturedCards.at(-1).card.header.title.content, new RegExp(title));
+        }
+        assert.strictEqual(capturedCards.length, 3);
+        notification.config = JSON.stringify({ type: "Feishu", enableInspectionReports: true, feishuWebHookUrl: `${baseURL}/fail?secret=private-token` });
+        await R.store(notification);
+        const failed = await InspectionReportService.sendManual(userOne.id);
+        assert.strictEqual(failed.outcome, "partial");
+        assert.strictEqual(failed.succeeded, 1);
+        assert.strictEqual(failed.failed, 2);
+        assert.ok(failed.failures.some((failure) => failure.channel === "Feishu"));
+        assert.doesNotMatch(JSON.stringify(failed), /private-token|must-not-reach-browser/);
+
+        for (const enabled of [undefined, false, "true", 1]) {
+            notification.config = JSON.stringify({ type: "Feishu", enableInspectionReports: enabled, feishuWebHookUrl: `${baseURL}/feishu` });
+            await R.store(notification);
+            assert.strictEqual(await InspectionReportService.getEligibleRecipientCount(userOne.id), 2);
+        }
+        notification.config = JSON.stringify({ type: "Feishu", enableInspectionReports: true, feishuWebHookUrl: `${baseURL}/feishu` });
+        notification.user_id = userTwo.id;
+        await R.store(notification);
+        assert.strictEqual(await InspectionReportService.getEligibleRecipientCount(userOne.id), 2);
+        assert.strictEqual(await InspectionReportService.getEligibleRecipientCount(userTwo.id), 1);
+        notification.user_id = userOne.id;
+        await R.store(notification);
+        await R.exec("DELETE FROM monitor_notification WHERE notification_id = ?", [notification.id]);
+        assert.strictEqual(await InspectionReportService.getEligibleRecipientCount(userOne.id), 2);
+        const group = await createMonitor(userOne.id, "Report group", "");
+        group.type = "group";
+        await R.store(group);
+        t.after(() => R.trash(group));
+        await createRelation(group.id, notification.id);
+        assert.strictEqual(await InspectionReportService.getEligibleRecipientCount(userOne.id), 2);
     });
 });
 
