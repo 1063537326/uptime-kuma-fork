@@ -3,6 +3,7 @@ const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 const NotificationProvider = require("./notification-provider");
 const { DOWN, UP } = require("../../src/util");
+const { buildTalkinInspectionText } = require("./talkin-inspection-text");
 
 dayjs.extend(utc);
 
@@ -20,13 +21,33 @@ class Talkin extends NotificationProvider {
      * @throws {Error} When configuration, transport, or business validation fails
      */
     async send(notification, msg, monitorJSON = null, heartbeatJSON = null) {
+        return this.sendText(notification, buildTalkinMessage(notification, msg, monitorJSON, heartbeatJSON));
+    }
+
+    /**
+     * Send an inspection report without manufacturing a real-time heartbeat.
+     * @param {object} notification Notification configuration
+     * @param {object} report Safe inspection report DTO
+     * @returns {Promise<string>} Acceptance message
+     */
+    async sendInspectionReport(notification, report) {
+        return this.sendText(notification, buildTalkinInspectionText(report));
+    }
+
+    /**
+     * Share the accepted single-user transport for alerts and reports.
+     * @param {object} notification Notification configuration
+     * @param {string} message Plain text
+     * @returns {Promise<string>} Acceptance message
+     */
+    async sendText(notification, message) {
         const config = validateTalkinConfig(notification);
         const formData = new URLSearchParams();
         formData.append("msgType", "text");
         formData.append("msgId", createMessageID());
         formData.append("appId", config.appID);
         formData.append("userId", config.userID);
-        formData.append("message", buildTalkinMessage(notification, msg, monitorJSON, heartbeatJSON));
+        formData.append("message", message);
 
         try {
             const response = await axios.post(config.apiURL, formData.toString(), {
