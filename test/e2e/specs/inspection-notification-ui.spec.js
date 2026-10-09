@@ -32,6 +32,53 @@ test.describe("Inspection and notification UI", () => {
         await expect(page.getByLabel("Receive inspection reports")).not.toBeChecked();
     });
 
+    test("Feishu opt-in persists and a manual report uses the inspection card", async ({ page }) => {
+        const cards = [];
+        const receiver = createServer(async (req, res) => {
+            const chunks = [];
+            for await (const chunk of req) {
+                chunks.push(chunk);
+            }
+            const payload = JSON.parse(Buffer.concat(chunks).toString());
+            if (payload.card?.header?.title?.content?.includes("手动巡检")) {
+                cards.push(payload);
+            }
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ code: 0, msg: "success" }));
+        });
+        await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+        try {
+            await openNotificationDialog(page);
+            await page.getByLabel("Notification Type").selectOption("Feishu");
+            const optIn = page.getByLabel("Receive inspection reports");
+            await expect(optIn).not.toBeChecked();
+            await page.locator("#notification-name").fill("Feishu report receiver");
+            await page.locator("#Feishu-WebHookUrl").fill(`http://127.0.0.1:${receiver.address().port}/report`);
+            await optIn.check();
+            await page.getByLabel("Default enabled for non-group monitors").check();
+            await page.locator(".modal.show").getByRole("button", { name: "Save", exact: true }).click();
+            await expect(page.locator(".modal.show")).toHaveCount(0);
+            await page.reload();
+            await page.getByRole("listitem").filter({ hasText: "Feishu report receiver" }).getByRole("link", { name: "Edit", exact: true }).click();
+            await expect(optIn).toBeChecked();
+            await page.locator(".modal.show").getByRole("button", { name: "Save", exact: true }).click();
+            await expect(page.locator(".modal.show")).toHaveCount(0);
+            await page.goto("./add");
+            await page.getByTestId("friendly-name-input").fill("Feishu local monitor");
+            await page.locator("#url").fill("http://127.0.0.1:3001");
+            await page.getByTestId("save-button").click();
+            await expect(page).toHaveURL(/\/dashboard\/\d+$/);
+            await page.goto("./dashboard");
+            await expect(page.getByTestId("send-inspection-report")).toBeEnabled();
+            await page.getByTestId("send-inspection-report").click();
+            await expect(page.getByTestId("inspection-report-result")).toContainText("1 succeeded, 0 failed, 1 total");
+            expect(cards).toHaveLength(1);
+            expect(cards[0].msg_type).toBe("interactive");
+        } finally {
+            await new Promise((resolve) => receiver.close(resolve));
+        }
+    });
+
     test("bulk preview uses dark surfaces and remains legible in light mode", async ({ page }) => {
         await page.evaluate(() => localStorage.setItem("theme", "dark"));
         await page.reload();
