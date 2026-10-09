@@ -75,6 +75,52 @@ test.describe("Default leaf notifications and group events", () => {
         await expectBinding(page, group, false);
     });
 
+    test("real leaf failures notify immediately while nested groups notify only after explicit binding", async ({ page }) => {
+        test.setTimeout(360000);
+        await createNotification(page, endpoint, true);
+        const root = await createMonitor(page, "Root group", "group", endpoint);
+        const child = await createMonitor(page, "Child group", "group", endpoint, root);
+        const leaf = await createMonitor(page, "HTTP leaf", "http", endpoint, child);
+        await expectBinding(page, leaf, true);
+        await expectBinding(page, child, false);
+        await expectBinding(page, root, false);
+        await expectStatus(page, root, "Up");
+        events.length = 0;
+        checks.length = 0;
+
+        healthStatus = 503;
+        await expect.poll(() => eventIDs(events, 0), { timeout: 40000 }).toEqual([leaf]);
+        const failedCheck = checks.find(check => check.status === 503);
+        expect(failedCheck).toBeDefined();
+        // Measure delivery after the failing check, not after flipping the target:
+        // the normal monitor interval still applies before a check observes failure.
+        expect(events[0].time - failedCheck.time).toBeLessThan(10000);
+        await expectStatus(page, root, "Down");
+        await expectStatus(page, child, "Down");
+        expect(eventIDs(events, 0)).toEqual([leaf]);
+
+        healthStatus = 200;
+        await expectStatus(page, root, "Up");
+        await expect.poll(() => eventIDs(events, 1)).toEqual([leaf]);
+        expect(events).toHaveLength(2);
+
+        await setBinding(page, child, true);
+        await setBinding(page, root, true);
+        await expectBinding(page, child, true);
+        await expectBinding(page, root, true);
+        await expectStatus(page, root, "Up");
+        events.length = 0;
+
+        healthStatus = 503;
+        const allIDs = [leaf, child, root].sort();
+        await expect.poll(() => eventIDs(events, 0), { timeout: 90000 }).toEqual(allIDs);
+        await expectStatus(page, root, "Down");
+        healthStatus = 200;
+        await expect.poll(() => eventIDs(events, 1), { timeout: 90000 }).toEqual(allIDs);
+        await expectStatus(page, root, "Up");
+        expect(events).toHaveLength(6);
+    });
+
     test("clones preserve explicit group and leaf bindings instead of reapplying defaults", async ({ page }) => {
         await createNotification(page, endpoint, true);
         const group = await createMonitor(page, "Bound group", "group", endpoint);
@@ -93,6 +139,29 @@ test.describe("Default leaf notifications and group events", () => {
         }
     });
 });
+
+/**
+ * Observe monitor IDs from actual received realtime Webhook requests.
+ * @param {object[]} events Received requests
+ * @param {number} status Heartbeat status
+ * @returns {string[]} Sorted IDs; duplicates remain visible to assertions
+ */
+function eventIDs(events, status) {
+    return events.filter(event => event.payload.heartbeat?.status === status)
+        .map(event => String(event.payload.monitor.id)).sort();
+}
+
+/**
+ * Wait for the actual monitor loop to propagate status to the dashboard.
+ * @param {Page} page Browser page
+ * @param {string} id Monitor ID
+ * @param {string} status Expected visible status
+ * @returns {Promise<void>}
+ */
+async function expectStatus(page, id, status) {
+    await page.goto(`./dashboard/${id}`);
+    await expect(page.getByTestId("monitor-status")).toHaveText(status, { timeout: 90000 });
+}
 
 /**
  * Configure a local receiver through the notification form.
