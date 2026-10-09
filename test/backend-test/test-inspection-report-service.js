@@ -27,6 +27,7 @@ describe("Inspection report service", () => {
     let monitorTwo;
     let capturedReport;
     const capturedCards = [];
+    const capturedTalkin = [];
 
     before(async () => {
         db = knex({
@@ -56,6 +57,7 @@ describe("Inspection report service", () => {
 
         const app = express();
         app.use(express.json());
+        app.use(express.urlencoded({ extended: false }));
         app.post("/ok", (req, res) => {
             capturedReport = req.body;
             res.json({ ok: true });
@@ -64,6 +66,10 @@ describe("Inspection report service", () => {
         app.post("/feishu", (req, res) => {
             capturedCards.push(req.body);
             res.json({ code: 0, msg: "success" });
+        });
+        app.post("/talkin/:result", (req, res) => {
+            capturedTalkin.push(req.body);
+            res.json(req.params.result === "ok" ? { code: 200, data: { data: true } } : { code: 1009, msg: "private-response" });
         });
         await new Promise((resolve) => {
             server = app.listen(0, "127.0.0.1", resolve);
@@ -253,6 +259,62 @@ describe("Inspection report service", () => {
         await R.exec("DELETE FROM monitor_notification WHERE notification_id = ?", [notification.id]);
         assert.strictEqual(await InspectionReportService.getEligibleRecipientCount(userOne.id), 2);
         const group = await createMonitor(userOne.id, "Report group", "");
+        group.type = "group";
+        await R.store(group);
+        t.after(() => R.trash(group));
+        await createRelation(group.id, notification.id);
+        assert.strictEqual(await InspectionReportService.getEligibleRecipientCount(userOne.id), 2);
+    });
+    test("Talkin inspection delivery is opted-in, user-scoped, deduplicated and isolated from other channel failures", async (t) => {
+        const config = { type: "Talkin", enableInspectionReports: true, talkinApiURL: `${baseURL}/talkin/ok`, talkinToken: "private-token", talkinAppID: "test-app", talkinUserID: "test-user" };
+        const notification = R.dispense("notification");
+        notification.user_id = userOne.id;
+        notification.name = "Talkin reports";
+        notification.config = JSON.stringify(config);
+        await R.store(notification);
+        t.after(async () => {
+            await R.exec("DELETE FROM monitor_notification WHERE notification_id = ?", [notification.id]);
+            await R.trash(notification);
+        });
+        await createRelation(monitorOne.id, notification.id);
+        await createRelation(monitorTwo.id, notification.id);
+        assert.strictEqual(await InspectionReportService.getEligibleRecipientCount(userOne.id), 3);
+        const manual = await InspectionReportService.sendManual(userOne.id);
+        assert.strictEqual(manual.succeeded, 2);
+        assert.strictEqual(manual.failed, 1);
+        assert.strictEqual(capturedTalkin.length, 1);
+        assert.match(capturedTalkin[0].message, /手动巡检/);
+        assert.strictEqual(capturedTalkin[0].userId, "test-user");
+        assert.doesNotMatch(capturedTalkin[0].message, /private-one|private-two|private-token/);
+        for (const [period, title] of [["morning", "早间巡检"], ["evening", "晚间巡检"]]) {
+            const result = await InspectionReportService.sendScheduled(userOne.id, new Date("2026-10-08T09:30:00Z"), { period, timezone: "Asia/Shanghai" });
+            assert.strictEqual(result.succeeded, 2);
+            assert.match(capturedTalkin.at(-1).message, new RegExp(title));
+        }
+        assert.strictEqual(capturedTalkin.length, 3);
+        assert.strictEqual(new Set(capturedTalkin.map((item) => item.msgId)).size, 3);
+        notification.config = JSON.stringify({ ...config, talkinApiURL: `${baseURL}/talkin/rejected` });
+        await R.store(notification);
+        const failed = await InspectionReportService.sendManual(userOne.id);
+        assert.strictEqual(failed.succeeded, 1);
+        assert.strictEqual(failed.failed, 2);
+        assert.ok(failed.failures.some((failure) => failure.channel === "Talkin" && failure.message.includes("1009")));
+        assert.doesNotMatch(JSON.stringify(failed), /private-token|private-response/);
+        for (const enabled of [undefined, false, "true", 1]) {
+            notification.config = JSON.stringify({ ...config, enableInspectionReports: enabled });
+            await R.store(notification);
+            assert.strictEqual(await InspectionReportService.getEligibleRecipientCount(userOne.id), 2);
+        }
+        notification.config = JSON.stringify(config);
+        notification.user_id = userTwo.id;
+        await R.store(notification);
+        assert.strictEqual(await InspectionReportService.getEligibleRecipientCount(userOne.id), 2);
+        assert.strictEqual(await InspectionReportService.getEligibleRecipientCount(userTwo.id), 1);
+        notification.user_id = userOne.id;
+        await R.store(notification);
+        await R.exec("DELETE FROM monitor_notification WHERE notification_id = ?", [notification.id]);
+        assert.strictEqual(await InspectionReportService.getEligibleRecipientCount(userOne.id), 2);
+        const group = await createMonitor(userOne.id, "Talkin report group", "");
         group.type = "group";
         await R.store(group);
         t.after(() => R.trash(group));

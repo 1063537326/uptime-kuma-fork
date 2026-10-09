@@ -478,7 +478,7 @@ async function getEligibleRecipients(userID) {
     for (const row of rows) {
         try {
             const config = JSON.parse(row.config);
-            if (["webhook", "Feishu"].includes(config.type) && config.enableInspectionReports === true) {
+            if (["webhook", "Feishu", "Talkin"].includes(config.type) && config.enableInspectionReports === true) {
                 recipients.push({
                     id: row.id,
                     name: row.name,
