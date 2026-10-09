@@ -1,22 +1,22 @@
-const { describe, test } = require("node:test");
+const { describe, test, mock } = require("node:test");
 const assert = require("node:assert");
+const ping = require("@louislam/ping");
 const { pingAsync } = require("../../server/util-server");
 
 describe("Server Utilities: pingAsync", () => {
     test("should convert IDN domains to Punycode before pinging", async () => {
         const idnDomain = "münchen.de";
         const punycodeDomain = "xn--mnchen-3ya.de";
-
-        await assert.rejects(pingAsync(idnDomain, false, 1, "", true, 56, 1, 1), (err) => {
-            if (err.message.includes("Parameter string not correctly encoded")) {
-                assert.fail("Ping failed with encoding error: IDN was not converted");
-            }
-            assert.ok(
-                err.message.includes(punycodeDomain),
-                `Error message should contain the Punycode domain "${punycodeDomain}". Got: ${err.message}`
-            );
-            return true;
+        mock.method(ping.promise, "probe", async (hostname) => {
+            assert.strictEqual(hostname, punycodeDomain);
+            return { alive: true, time: 1 };
         });
+
+        try {
+            assert.strictEqual(await pingAsync(idnDomain, false, 1, "", true, 56, 1, 1), 1);
+        } finally {
+            mock.restoreAll();
+        }
     });
 
     test("should strip brackets from IPv6 addresses before pinging", async () => {

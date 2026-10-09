@@ -1,5 +1,6 @@
 const { describe, test } = require("node:test");
 const assert = require("node:assert/strict");
+const dgram = require("node:dgram");
 const { NTPMonitorType } = require("../../server/monitor-types/ntp");
 const { UP } = require("../../src/util");
 
@@ -245,19 +246,35 @@ describe("NTPMonitorType", () => {
         }
     });
 
-    test(
-        "queryNTP() can reach a public NTP server",
-        {
-            skip: !!process.env.CI,
-        },
-        async () => {
-            const result = await ntp.queryNTP("time.google.com", 123, 10000);
+    test("queryNTP() parses a real local UDP response", async () => {
+        const server = dgram.createSocket("udp4");
+        server.on("message", (request, remote) => {
+            const response = Buffer.alloc(48);
+            response[0] = 0x1c;
+            response[1] = 2;
+            response.writeUInt32BE(655, 8);
+            response.set([ 127, 0, 0, 1 ], 12);
+            const ntpNow = Date.now() + 2208988800000;
+            for (const offset of [ 32, 40 ]) {
+                const seconds = Math.floor(ntpNow / 1000);
+                const fraction = Math.floor(((ntpNow % 1000) / 1000) * 0x100000000);
+                response.writeUInt32BE(seconds, offset);
+                response.writeUInt32BE(fraction, offset + 4);
+            }
+            server.send(response, remote.port, remote.address);
+        });
+        await new Promise((resolve) => server.bind(0, "127.0.0.1", resolve));
+
+        try {
+            const result = await ntp.queryNTP("127.0.0.1", server.address().port, 1000);
             assert.strictEqual(typeof result.stratum, "number");
             assert.ok(result.stratum >= 1 && result.stratum <= 15, `stratum should be 1-15, got ${result.stratum}`);
             assert.strictEqual(typeof result.offset, "number");
             assert.strictEqual(typeof result.roundTripDelay, "number");
             assert.strictEqual(typeof result.rootDispersion, "number");
             assert.strictEqual(typeof result.refid, "string");
+        } finally {
+            await new Promise((resolve) => server.close(resolve));
         }
-    );
+    });
 });
