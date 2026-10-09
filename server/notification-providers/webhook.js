@@ -3,6 +3,7 @@ const axios = require("axios");
 const FormData = require("form-data");
 const { assertTalkinResponse, TalkinResponseError, toTalkinError } = require("./talkin");
 const { buildInspectionReportText } = require("./inspection-report-text");
+const { renderInspectionTemplate, InspectionTemplateError } = require("./webhook-inspection-template");
 
 class Webhook extends NotificationProvider {
     name = "webhook";
@@ -40,6 +41,8 @@ class Webhook extends NotificationProvider {
 
         try {
             const httpMethod = notification.httpMethod?.toLowerCase() || "post";
+            const inspectionBody = report ? notification.webhookInspectionBody : null;
+            const contentType = ["json", "custom"].includes(inspectionBody) ? inspectionBody : notification.webhookContentType;
 
             let data = report || {
                 heartbeat: heartbeatJSON,
@@ -69,13 +72,18 @@ class Webhook extends NotificationProvider {
                 if (monitorJSON) {
                     config.params.monitor = JSON.stringify(monitorJSON);
                 }
-            } else if (notification.webhookContentType === "form-data") {
+            } else if (contentType === "form-data") {
                 const formData = new FormData();
                 formData.append("data", JSON.stringify(data));
                 config.headers = formData.getHeaders();
                 data = formData;
-            } else if (notification.webhookContentType === "custom") {
-                data = await this.renderTemplate(notification.webhookCustomBody, msg, monitorJSON, heartbeatJSON, report);
+            } else if (contentType === "custom") {
+                if (inspectionBody === "custom") {
+                    data = await renderInspectionTemplate(notification.webhookInspectionCustomBody, report, msg);
+                    config.headers["Content-Type"] = "text/plain; charset=utf-8";
+                } else {
+                    data = await this.renderTemplate(notification.webhookCustomBody, msg, monitorJSON, heartbeatJSON, report);
+                }
             }
 
             if (notification.webhookAdditionalHeaders) {
@@ -102,11 +110,23 @@ class Webhook extends NotificationProvider {
 
             return okMsg;
         } catch (error) {
+            if (error instanceof InspectionTemplateError) {
+                throw error;
+            }
             if (error instanceof TalkinResponseError) {
                 throw error;
             }
             if (isTalkin) {
                 throw toTalkinError(error);
+            }
+            if (report) {
+                if (error.response?.status) {
+                    throw new Error(`Webhook inspection request failed (HTTP ${error.response.status}).`);
+                }
+                if (["ECONNABORTED", "ETIMEDOUT"].includes(error.code)) {
+                    throw new Error("Webhook inspection request timed out.");
+                }
+                throw new Error("Webhook inspection failed. Check the template, headers and connection.");
             }
             this.throwGeneralAxiosError(error);
         }
