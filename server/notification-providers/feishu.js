@@ -23,10 +23,7 @@ class Feishu extends NotificationProvider {
         try {
             const response = await axios.post(notification.feishuWebHookUrl, buildFeishuInspectionCard(report),
                 this.getAxiosConfigWithProxy({ timeout: 10000 }));
-            const code = response.data?.code !== undefined ? response.data.code : response.data?.StatusCode;
-            if (code !== 0) {
-                throw new Error("Feishu rejected the inspection report.");
-            }
+            assertFeishuAccepted(response.data);
             return "Sent Successfully.";
         } catch (error) {
             // Never expose the secret webhook URL or the upstream response.
@@ -43,7 +40,7 @@ class Feishu extends NotificationProvider {
         try {
             const config = this.getAxiosConfigWithProxy({});
             if (heartbeatJSON == null) {
-                await axios.post(
+                const response = await axios.post(
                     notification.feishuWebHookUrl,
                     {
                         msg_type: "text",
@@ -53,16 +50,31 @@ class Feishu extends NotificationProvider {
                     },
                     config
                 );
+                assertFeishuAccepted(response.data);
                 return okMsg;
             }
 
             if (heartbeatJSON.status === DOWN || heartbeatJSON.status === UP) {
-                await axios.post(notification.feishuWebHookUrl, buildRealtimeCard(monitorJSON, heartbeatJSON), config);
+                const response = await axios.post(notification.feishuWebHookUrl, buildRealtimeCard(monitorJSON, heartbeatJSON), config);
+                assertFeishuAccepted(response.data);
                 return okMsg;
             }
         } catch (error) {
             this.throwGeneralAxiosError(error);
         }
+    }
+}
+
+/**
+ * Require Feishu's business acknowledgement in addition to HTTP success.
+ * @param {*} data Feishu response body
+ * @returns {void}
+ * @throws {Error} When Feishu did not accept the message
+ */
+function assertFeishuAccepted(data) {
+    const code = data?.code !== undefined ? data.code : data?.StatusCode;
+    if (code !== 0) {
+        throw new Error("Feishu rejected the message.");
     }
 }
 
