@@ -1,15 +1,7 @@
 @AGENTS.md
 
-## Agent skills
+## Conditional references
 
-### Issue tracker
-
-规格和任务使用本地 Markdown，存放在 `.scratch/`。详见 `docs/agents/issue-tracker.md`。
-
-### Triage labels
-
-使用默认的五种 Triage 状态。详见 `docs/agents/triage-labels.md`。
-
-### Domain docs
-
-项目采用单上下文领域文档，术语位于 `DOCS/CONTEXT.md`，架构决策位于 `DOCS/adr/`。详见 `docs/agents/domain.md`。
+- 处理 `.scratch/` 规格、任务或状态时：`DOCS/agents/issue-tracker.md`
+- 开展领域分析、术语或架构决策时：`DOCS/agents/domain.md`
+- 修改通知提供方、巡检发送或失败反馈时：`DOCS/agents/notification-contracts.md`
