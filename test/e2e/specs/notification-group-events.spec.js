@@ -1,8 +1,6 @@
-import { expect, test } from "@playwright/test";
 import { createServer } from "node:http";
+import { expect, test } from "../fixtures/monitor-lifecycle";
 import { login, restoreSqliteSnapshot } from "../util-test";
-
-const createdMonitors = new WeakMap();
 
 test.describe("Default leaf notifications and group events", () => {
     let receiver;
@@ -11,8 +9,7 @@ test.describe("Default leaf notifications and group events", () => {
     let events;
     let checks;
 
-    test.beforeEach(async ({ page }) => {
-        createdMonitors.set(page, []);
+    test.beforeEach(async ({ page, monitorLifecycle }) => {
         healthStatus = 200;
         events = [];
         checks = [];
@@ -30,6 +27,10 @@ test.describe("Default leaf notifications and group events", () => {
             res.end("accepted");
         });
         await new Promise(resolve => receiver.listen(0, "127.0.0.1", resolve));
+        monitorLifecycle.afterMonitorsStopped(async () => {
+            receiver.closeAllConnections();
+            await new Promise(resolve => receiver.close(resolve));
+        });
         endpoint = `http://127.0.0.1:${receiver.address().port}`;
         await restoreSqliteSnapshot();
         await page.goto("./dashboard");
@@ -37,26 +38,10 @@ test.describe("Default leaf notifications and group events", () => {
         await expect(page.getByText("Add New Monitor")).toBeVisible();
     });
 
-    test.afterEach(async ({ page }) => {
-        try {
-            // Stop this test's loops before closing their HTTP target or allowing
-            // the next test to restore its database snapshot.
-            for (const id of createdMonitors.get(page).slice().reverse()) {
-                await page.goto(`./dashboard/${id}`);
-                await page.getByRole("button", { name: "Pause", exact: true }).click();
-                await page.locator(".modal.show").getByRole("button", { name: "Yes", exact: true }).click();
-                await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
-            }
-        } finally {
-            receiver.closeAllConnections();
-            await new Promise(resolve => receiver.close(resolve));
-        }
-    });
-
-    test("bulk non-group apply preserves group bindings until cleanup is explicitly selected", async ({ page }) => {
+    test("bulk non-group apply preserves group bindings until cleanup is explicitly selected", async ({ page, monitorLifecycle }) => {
         await createNotification(page, endpoint, false);
-        const group = await createMonitor(page, "Existing group", "group", endpoint);
-        const leaf = await createMonitor(page, "Existing leaf", "http", endpoint);
+        const group = await createMonitor(page, monitorLifecycle, "Existing group", "group", endpoint);
+        const leaf = await createMonitor(page, monitorLifecycle, "Existing leaf", "http", endpoint);
         await setBinding(page, group, true);
         await editNotification(page);
         await page.getByLabel("Apply to existing monitors").selectOption("non-group");
@@ -75,12 +60,12 @@ test.describe("Default leaf notifications and group events", () => {
         await expectBinding(page, group, false);
     });
 
-    test("real leaf failures notify immediately while nested groups notify only after explicit binding", async ({ page }) => {
+    test("real leaf failures notify immediately while nested groups notify only after explicit binding", async ({ page, monitorLifecycle }) => {
         test.setTimeout(360000);
         await createNotification(page, endpoint, true);
-        const root = await createMonitor(page, "Root group", "group", endpoint);
-        const child = await createMonitor(page, "Child group", "group", endpoint, root);
-        const leaf = await createMonitor(page, "HTTP leaf", "http", endpoint, child);
+        const root = await createMonitor(page, monitorLifecycle, "Root group", "group", endpoint);
+        const child = await createMonitor(page, monitorLifecycle, "Child group", "group", endpoint, root);
+        const leaf = await createMonitor(page, monitorLifecycle, "HTTP leaf", "http", endpoint, child);
         await expectBinding(page, leaf, true);
         await expectBinding(page, child, false);
         await expectBinding(page, root, false);
@@ -121,11 +106,11 @@ test.describe("Default leaf notifications and group events", () => {
         expect(events).toHaveLength(6);
     });
 
-    test("clones preserve explicit group and leaf bindings instead of reapplying defaults", async ({ page }) => {
+    test("clones preserve explicit group and leaf bindings instead of reapplying defaults", async ({ page, monitorLifecycle }) => {
         await createNotification(page, endpoint, true);
-        const group = await createMonitor(page, "Bound group", "group", endpoint);
+        const group = await createMonitor(page, monitorLifecycle, "Bound group", "group", endpoint);
         await setBinding(page, group, true);
-        const leaf = await createMonitor(page, "Unbound leaf", "http", endpoint);
+        const leaf = await createMonitor(page, monitorLifecycle, "Unbound leaf", "http", endpoint);
         await setBinding(page, leaf, false);
         for (const [id, enabled] of [[group, true], [leaf, false]]) {
             await page.goto(`./clone/${id}`);
@@ -133,7 +118,7 @@ test.describe("Default leaf notifications and group events", () => {
             await page.getByTestId("save-button").click();
             await expect(page).toHaveURL(/\/dashboard\/\d+$/);
             const clone = page.url().split("/").pop();
-            createdMonitors.get(page).push(clone);
+            monitorLifecycle.track(clone);
             expect(clone).not.toBe(id);
             await expectBinding(page, clone, enabled);
         }
@@ -184,13 +169,14 @@ async function createNotification(page, endpoint, isDefault) {
 /**
  * Create a real monitor through the UI with normal twenty-second checks.
  * @param {Page} page Browser page
+ * @param {object} monitorLifecycle Monitor cleanup fixture
  * @param {string} name Monitor name
  * @param {string} type Monitor type
  * @param {string} endpoint Local HTTP target
  * @param {?string} parent Parent group ID
  * @returns {Promise<string>} Created monitor ID
  */
-async function createMonitor(page, name, type, endpoint, parent = null) {
+async function createMonitor(page, monitorLifecycle, name, type, endpoint, parent = null) {
     await page.goto("./add");
     await page.getByTestId("monitor-type-select").selectOption(type);
     await page.getByTestId("friendly-name-input").fill(name);
@@ -205,7 +191,7 @@ async function createMonitor(page, name, type, endpoint, parent = null) {
     await page.getByTestId("save-button").click();
     await expect(page).toHaveURL(/\/dashboard\/\d+$/);
     const id = page.url().split("/").pop();
-    createdMonitors.get(page).push(id);
+    monitorLifecycle.track(id);
     return id;
 }
 
